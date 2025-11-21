@@ -1,0 +1,451 @@
+import { polymarketThrottler } from './requestThrottle';
+
+const TEAM_NAME_MAP: Record<string, string> = {
+  '凯尔特人': 'Celtics',
+  '快船': 'Clippers',
+  '马刺': 'Spurs',
+  '国王': 'Kings',
+  '奇才': 'Wizards',
+  '篮网': 'Nets',
+  '火箭': 'Rockets',
+  '魔术': 'Magic',
+  '鹈鹕': 'Pelicans',
+  '勇士': 'Warriors',
+  '独行侠': 'Mavericks',
+  '开拓者': 'Trail Blazers',
+  '爵士': 'Jazz',
+  '公牛': 'Bulls',
+  '太阳': 'Suns',
+  '老鹰': 'Hawks',
+  '活塞': 'Pistons',
+  '步行者': 'Pacers',
+  '76人': '76ers',
+  '骑士': 'Cavaliers',
+  '猛龙': 'Raptors',
+  '黄蜂': 'Hornets',
+  '热火': 'Heat',
+  '尼克斯': 'Knicks',
+  '森林狼': 'Timberwolves',
+  '雷霆': 'Thunder',
+  '掘金': 'Nuggets',
+  '灰熊': 'Grizzlies',
+  '湖人': 'Lakers',
+  '雄鹿': 'Bucks'
+};
+
+interface PolymarketEvent {
+  id: string;
+  title: string;
+  slug: string;
+  markets: PolymarketMarket[];
+}
+
+interface PolymarketMarket {
+  id: string;
+  question: string;
+  outcomes: string[] | string; // Can be array or JSON string
+  outcomePrices: string[] | string; // Can be array or JSON string
+  volume24hr?: number;
+  clobTokenIds?: string[] | string; // Can be array or JSON string
+}
+
+// Cache for NBA events to avoid repeated fetches
+let nbaEventsCache: { events: PolymarketEvent[]; timestamp: number } | null = null;
+const CACHE_DURATION = 10 * 1000; // 10 seconds - Gamma API 建议 5-10 秒刷新
+
+export const getEnglishTeamName = (chineseName: string): string => {
+  return TEAM_NAME_MAP[chineseName] || chineseName;
+};
+
+const fetchClobPrice = async (tokenId: string, retries = 2): Promise<string | null> => {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout - CLOB 建议 2-5 秒
+      
+      const response = await fetch(`/api/clob/price?token_id=${tokenId}&side=sell`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        if (attempt === retries) return null;
+        continue;
+      }
+      
+      const data = await response.json();
+      return data.price;
+    } catch (error) {
+      if (attempt === retries) {
+        // 静默失败，不打印错误（避免刷屏）
+        return null;
+      }
+      // 短暂延迟后重试
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+  return null;
+};
+
+const enrichWithClobPrices = async (market: PolymarketMarket): Promise<PolymarketMarket> => {
+  // If the market has CLOB token IDs, fetch live prices from CLOB
+  if (!market.clobTokenIds) {
+    return market;
+  }
+
+  // Parse clobTokenIds if it's a string
+  let tokenIds: string[] = [];
+  try {
+    if (typeof market.clobTokenIds === 'string') {
+      tokenIds = JSON.parse(market.clobTokenIds);
+    } else if (Array.isArray(market.clobTokenIds)) {
+      tokenIds = market.clobTokenIds;
+    } else {
+      return market;
+    }
+  } catch (e) {
+    return market;
+  }
+
+  if (tokenIds.length === 0) {
+    return market;
+  }
+  
+  try {
+    // Fetch prices for each outcome
+    const pricePromises = tokenIds.map(tokenId => fetchClobPrice(tokenId));
+    const clobPrices = await Promise.all(pricePromises);
+
+    // Validate CLOB prices - they should sum to approximately 1.0
+    const validClobPrices = clobPrices.filter(p => p !== null);
+    if (validClobPrices.length === clobPrices.length) {
+      const sum = validClobPrices.reduce((acc, p) => acc + parseFloat(p!), 0);
+      
+      // Allow 3% tolerance for CLOB price variations
+      if (Math.abs(sum - 1.0) > 0.03) {
+        return market;
+      }
+      
+      // Normalize prices to sum to exactly 1.0
+      if (Math.abs(sum - 1.0) > 0.001) {
+        const normalizedPrices = clobPrices.map(p => {
+          if (p === null) return null;
+          return (parseFloat(p) / sum).toFixed(4);
+        });
+        // Use normalized prices instead
+        clobPrices.splice(0, clobPrices.length, ...normalizedPrices);
+      }
+    } else {
+      // 部分价格获取失败，静默回退
+      return market;
+    }
+
+    // Parse outcomePrices if it's a string
+    let currentPrices: string[] = [];
+    try {
+      if (typeof market.outcomePrices === 'string') {
+        currentPrices = JSON.parse(market.outcomePrices);
+      } else if (Array.isArray(market.outcomePrices)) {
+        currentPrices = market.outcomePrices;
+      } else {
+        return market;
+      }
+    } catch (e) {
+      return market;
+    }
+
+    // Update outcomePrices with CLOB prices if available
+    const updatedPrices = currentPrices.map((price, index) => {
+      const clobPrice = clobPrices[index];
+      if (clobPrice !== null) {
+        return clobPrice;
+      }
+      return price;
+    });
+
+    // 只在成功更新时记录一次
+    console.log('[CLOB] ✓ 实时价格已更新');
+
+    return {
+      ...market,
+      outcomePrices: updatedPrices
+    };
+  } catch (error) {
+    console.error('Error enriching with CLOB prices:', error);
+  }
+
+  return market;
+};
+
+// Fetch all NBA events from Polymarket using tag_id
+async function fetchNBAEvents(skipCache = false): Promise<PolymarketEvent[]> {
+  // Check cache first (unless skipCache is true)
+  if (!skipCache && nbaEventsCache && Date.now() - nbaEventsCache.timestamp < CACHE_DURATION) {
+    return nbaEventsCache.events;
+  }
+
+  try {
+    const url = `/api/polymarket/events?tag_id=745&closed=false&limit=100`;
+    
+    // 使用节流器限制并发请求
+    const events: PolymarketEvent[] = await polymarketThrottler.request(
+      'fetchNBAEvents',
+      async () => {
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error(`Polymarket API error: ${response.status}`);
+        }
+        
+        return await response.json();
+      }
+    );
+    
+    // Filter for actual games (not futures) - games have "vs" or "vs." in title
+    const gameEvents = events.filter((event: PolymarketEvent) => {
+      const title = event.title || '';
+      return title.includes(' vs ') || title.includes(' vs. ');
+    });
+    
+    // Update cache
+    nbaEventsCache = {
+      events: gameEvents,
+      timestamp: Date.now()
+    };
+    
+    return gameEvents;
+  } catch (error) {
+    console.error('Error fetching NBA events:', error);
+    return [];
+  }
+}
+
+export const searchPolymarketMatch = async (homeTeam: string, awayTeam: string, forceRefresh = false): Promise<PolymarketMarket | null> => {
+  const homeEn = getEnglishTeamName(homeTeam);
+  const awayEn = getEnglishTeamName(awayTeam);
+
+  try {
+    // 定期输出节流器状态（仅在有排队时）
+    // const stats = polymarketThrottler.getStats();
+    // if (stats.queued > 5) {
+    //   console.log(`[节流器] 队列:${stats.queued} 活跃:${stats.active}`);
+    // }
+    
+    const events = await fetchNBAEvents(forceRefresh);
+    
+    // If no events (API blocked), return null
+    if (events.length === 0) {
+      return null;
+    }
+    
+    // Find the event that contains both team names in the title
+    const matchEvent = events.find(e => {
+      const title = e.title || '';
+      return title.includes(homeEn) && title.includes(awayEn);
+    });
+
+    if (!matchEvent || !matchEvent.markets.length) {
+      return null;
+    }
+
+    // 只对特定比赛显示详细调试
+    const isDebug = (homeEn === 'Thunder' && awayEn === 'Kings') || (homeEn === 'Kings' && awayEn === 'Thunder');
+    
+    if (isDebug) {
+      console.log(`[调试] ${homeEn} vs ${awayEn} - 找到 ${matchEvent.markets.length} 个市场`);
+    }
+    
+    // Find the "Winner" market (moneyline) - must have team names in outcomes
+    // Filter out Over/Under, Spread, 1H, 2H, and other prop markets
+    const winnerMarket = matchEvent.markets.find(m => {
+      if (isDebug) {
+        console.log(`  检查市场: "${m.question}"`);
+      }
+      
+      const question = m.question.toLowerCase();
+      
+      // 排除非全场胜负盘（使用正则表达式单词边界匹配）
+      if (/\bspread\b/.test(question)) {
+        if (isDebug) console.log(`    ❌ 排除: 包含 spread`);
+        return false;
+      }
+      if (/\bo\/u\b/.test(question) || /\bover\b/.test(question) || /\bunder\b/.test(question)) {
+        if (isDebug) console.log(`    ❌ 排除: 包含 over/under`);
+        return false;
+      }
+      if (/\b1h\b/.test(question) || question.includes('first half')) {
+        if (isDebug) console.log(`    ❌ 排除: 上半场`);
+        return false;
+      }
+      if (/\b2h\b/.test(question) || question.includes('second half')) {
+        if (isDebug) console.log(`    ❌ 排除: 下半场`);
+        return false;
+      }
+      if (/\btotal\b/.test(question)) {
+        if (isDebug) console.log(`    ❌ 排除: 包含 total`);
+        return false;
+      }
+      if (/\bhandicap\b/.test(question)) {
+        if (isDebug) console.log(`    ❌ 排除: 包含 handicap`);
+        return false;
+      }
+      if (/\bpoints?\b/.test(question)) {
+        if (isDebug) console.log(`    ❌ 排除: 包含 points`);
+        return false;
+      }
+      if (/\bquarter\b/.test(question)) {
+        if (isDebug) console.log(`    ❌ 排除: 单节`);
+        return false;
+      }
+      if (/\bmoneyline\b/.test(question) && /\b1h\b/.test(question)) {
+        if (isDebug) console.log(`    ❌ 排除: 上半场 moneyline`);
+        return false;
+      }
+      
+      // Parse outcomes to check
+      let outcomes: string[] = [];
+      try {
+        if (typeof m.outcomes === 'string') {
+          outcomes = JSON.parse(m.outcomes);
+        } else if (Array.isArray(m.outcomes)) {
+          outcomes = m.outcomes;
+        }
+      } catch (e) {
+        if (isDebug) console.log(`    ❌ 排除: 无法解析 outcomes`);
+        return false;
+      }
+      
+      if (isDebug) console.log(`    Outcomes: [${outcomes.join(', ')}]`);
+      
+      // 必须是恰好2个结果（不是3个或更多）
+      if (outcomes.length !== 2) {
+        if (isDebug) console.log(`    ❌ 排除: outcomes 数量 ${outcomes.length} (需要2个)`);
+        return false;
+      }
+      
+      // Check if outcomes contain team names (not "Over"/"Under", "Yes"/"No", etc)
+      const hasHomeTeam = outcomes.some(o => o.includes(homeEn));
+      const hasAwayTeam = outcomes.some(o => o.includes(awayEn));
+      
+      if (isDebug) console.log(`    包含 ${homeEn}? ${hasHomeTeam}, 包含 ${awayEn}? ${hasAwayTeam}`);
+      
+      if (hasHomeTeam && hasAwayTeam) {
+        if (isDebug) console.log(`    ✅ 选中此市场！`);
+        return true;
+      } else {
+        if (isDebug) console.log(`    ❌ 排除: 不包含球队名称`);
+        return false;
+      }
+    });
+
+    if (winnerMarket) {
+      // Debug: 检查市场数据
+      console.log(`[市场] ${homeEn} vs ${awayEn}:`, {
+        question: winnerMarket.question,
+        outcomes: winnerMarket.outcomes,
+        prices: winnerMarket.outcomePrices
+      });
+      return await enrichWithClobPrices(winnerMarket);
+    } else {
+      // 只对有问题的比赛显示警告
+      if (isDebug) {
+        console.warn(`⚠️ 未找到Winner市场: ${homeEn} vs ${awayEn}`);
+        console.warn(`  提示: 检查上面的日志看看为什么所有市场都被过滤了`);
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error searching Polymarket:', error);
+    return null;
+  }
+};
+
+export const getMarketPrice = async (marketId: string): Promise<PolymarketMarket | null> => {
+  try {
+    const response = await fetch(`/api/polymarket/markets/${marketId}`);
+    if (!response.ok) throw new Error('Polymarket Market API error');
+    const market = await response.json();
+    return await enrichWithClobPrices(market);
+  } catch (error) {
+    console.error('Error fetching market price:', error);
+    return null;
+  }
+};
+
+// Helper to determine if price is bullish/bearish (mock logic replaced by real logic if possible)
+// For "Winner", usually there are two outcomes.
+// We need to map the price to the "Home" team or "Away" team specifically.
+export const normalizeMarketData = (market: PolymarketMarket, homeTeamEn: string, awayTeamEn: string) => {
+  // Parse outcomes. usually ["Team A", "Team B"]
+  // We want the price of the HOME team for consistency, or return both.
+  
+  try {
+    let outcomes: string[] = [];
+    let prices: string[] = [];
+
+    try {
+        if (typeof market.outcomes === 'string') {
+            outcomes = JSON.parse(market.outcomes);
+        } else if (Array.isArray(market.outcomes)) {
+            outcomes = market.outcomes;
+        }
+        
+        if (typeof market.outcomePrices === 'string') {
+            prices = JSON.parse(market.outcomePrices);
+        } else if (Array.isArray(market.outcomePrices)) {
+            prices = market.outcomePrices;
+        }
+    } catch (e) {
+        console.error('解析 outcomes/prices 失败:', e);
+        return { homePrice: "0.0", awayPrice: "0.0", homeRawPrice: 0, awayRawPrice: 0 };
+    }
+    
+    // Find index of home team and away team
+    const homeIndex = outcomes.findIndex((o: string) => o.includes(homeTeamEn));
+    const awayIndex = outcomes.findIndex((o: string) => o.includes(awayTeamEn));
+    
+    let homePriceStr = "0";
+    let awayPriceStr = "0";
+
+    if (homeIndex !== -1) {
+        homePriceStr = prices[homeIndex];
+        // If 2 outcomes, assume the other is away if not found explicitly
+        if (awayIndex === -1 && prices.length === 2) {
+            awayPriceStr = prices[homeIndex === 0 ? 1 : 0];
+        } else if (awayIndex !== -1) {
+            awayPriceStr = prices[awayIndex];
+        }
+    } else if (awayIndex !== -1) {
+        awayPriceStr = prices[awayIndex];
+        if (prices.length === 2) {
+            homePriceStr = prices[awayIndex === 0 ? 1 : 0];
+        }
+    } else {
+        // Fallback: Assume first is Home, second is Away (or vice versa? unlikely to be random if we matched title)
+        // Often market outcomes are sorted. Let's just take 0 and 1.
+        homePriceStr = prices[0];
+        awayPriceStr = prices[1] || "0";
+    }
+    
+    const result = {
+      homePrice: (parseFloat(homePriceStr) * 100).toFixed(1), // Convert to cents
+      awayPrice: (parseFloat(awayPriceStr) * 100).toFixed(1),
+      homeRawPrice: parseFloat(homePriceStr),
+      awayRawPrice: parseFloat(awayPriceStr),
+      outcomes: outcomes as string[],
+      prices: prices as string[]
+    };
+    
+    // Validate that prices sum to approximately 100%
+    const priceSum = result.homeRawPrice + result.awayRawPrice;
+    if (Math.abs(priceSum - 1.0) > 0.01) {
+      console.warn(`⚠️ 价格异常 ${homeTeamEn} vs ${awayTeamEn}: ${(priceSum * 100).toFixed(1)}¢ (应该是100¢)`);
+    }
+    
+    return result;
+  } catch (e) {
+    console.error("Error parsing market data", e);
+    return { homePrice: "0.0", awayPrice: "0.0", homeRawPrice: 0, awayRawPrice: 0 };
+  }
+};

@@ -82,6 +82,94 @@ WebSocket 断开
 
 ## 注意事项
 
-⚠️ Polymarket WebSocket 需要通过 VPN/Clash 访问（与 HTTP API 相同）  
-⚠️ 浏览器 WebSocket 不能使用 Vite 代理，必须直连  
-⚠️ 确保 Clash 的系统代理已开启  
+⚠️ **Polymarket WebSocket 需要通过 VPN/Clash 访问**（与 HTTP API 相同）  
+⚠️ **浏览器 WebSocket 不能使用 Vite 代理**，必须直连  
+⚠️ **确保 Clash 的系统代理已开启**
+
+## 技术细节
+
+### 订阅消息格式
+```json
+{
+  "auth": {},
+  "type": "market",
+  "market": "0x123456...",
+  "assets_ids": ["123456", "789012"]
+}
+```
+
+### 价格推送格式
+```json
+{
+  "event_type": "price_change",
+  "asset_id": "123456",
+  "price": "0.465"
+}
+```
+
+### 重连策略
+- 连接断开后等待 5 秒
+- 自动重新连接
+- 重新订阅所有 Token IDs
+- 最多重试 10 次
+
+## 性能优化
+
+### 批量订阅
+系统会将多个市场的订阅请求合并，避免频繁发送小消息。
+
+### 智能去重
+相同 Token ID 只订阅一次，即使多场比赛使用同一市场。
+
+### 内存管理
+- 自动清理已结束比赛的订阅
+- 组件卸载时取消订阅
+- 页面隐藏时暂停连接（可选）
+
+## 数据流图
+
+```
+Polymarket WebSocket Server
+           ↓
+    wss://ws-subscriptions-clob.polymarket.com
+           ↓
+      [订阅 Token IDs]
+           ↓
+    [实时价格推送] ← 价格变化
+           ↓
+   websocketManager.ts
+           ↓
+   updatePriceData() → Redux Store
+           ↓
+      React 组件重新渲染
+           ↓
+        UI 更新
+```
+
+## 与 HTTP 轮询对比
+
+| 特性 | WebSocket | HTTP 轮询 |
+|------|-----------|-----------|
+| **延迟** | <100ms | 30-60s |
+| **带宽** | 极低（仅变化） | 较高（每次全量） |
+| **服务器负载** | 低 | 高 |
+| **实时性** | ✅ 优秀 | ⚠️ 一般 |
+| **实现复杂度** | 中等 | 简单 |
+| **稳定性** | 需要重连机制 | 简单可靠 |
+
+## 故障排查
+
+### WebSocket 连接失败
+1. 检查 Clash 系统代理是否开启
+2. 查看浏览器控制台是否有跨域错误
+3. 尝试直接访问 `wss://ws-subscriptions-clob.polymarket.com`
+
+### 价格不更新
+1. 检查控制台是否有 `[WS价格]` 日志
+2. 确认市场 Token ID 是否正确
+3. 检查 Redux Store 是否正确更新
+
+### 频繁断线
+1. 检查网络稳定性
+2. 调整重连延迟时间
+3. 考虑使用 HTTP 轮询作为备用  

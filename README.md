@@ -2,6 +2,7 @@
 
 > NBA 预测市场实时监控与交易策略工具
 
+![PolySniper](./src/assets/1.png)
 **PolySniper** 是一个专为 [Polymarket](https://polymarket.com) NBA 比赛预测市场设计的实时监控系统，通过整合多源数据提供智能交易信号。
 
 ## ✨ 核心功能

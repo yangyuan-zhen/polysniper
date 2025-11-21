@@ -8,8 +8,8 @@
 ## ✨ 核心功能
 
 ### 📊 实时数据监控
-- **WebSocket 价格推送**：毫秒级延迟，实时追踪 Polymarket 市场价格变化
-- **比赛实时比分**：30秒更新，获取虎扑 API 比赛数据
+- **价格自动刷新**：10秒自动更新，实时追踪 Polymarket 市场价格变化
+- **比赛实时比分**：10秒更新，获取虎扑 API 比赛数据
 - **ESPN 胜率预测**：
   - 赛前：基于博彩赔率计算胜率预测
   - 赛中：实时 Win Probability 动态更新
@@ -66,8 +66,7 @@ npm run dev
 - **Chart.js** - 图表可视化
 
 ### 数据源
-- **Polymarket API** - 预测市场价格
-- **Polymarket WebSocket** - 实时价格推送
+- **Polymarket API** - 预测市场价格（10秒自动刷新）
 - **虎扑 API** - NBA 比赛数据
 - **ESPN API** - 胜率预测、伤病信息
 
@@ -76,7 +75,6 @@ npm run dev
 ## 📖 文档
 
 - [📊 SIGNALS_GUIDE.md](./SIGNALS_GUIDE.md) - 交易信号详解
-- [🔌 WEBSOCKET.md](./WEBSOCKET.md) - WebSocket 实现原理
 - [📋 PRD.md](./PRD.md) - 产品需求文档
 
 ---
@@ -106,8 +104,7 @@ src/
 ├── services/           # API 服务
 │   ├── api.ts         # Polymarket API
 │   ├── espn.ts        # ESPN API (胜率/伤病)
-│   ├── strategy.ts    # 交易策略算法
-│   └── websocket.ts   # WebSocket 连接
+│   └── strategy.ts    # 交易策略算法
 ├── store/             # Redux 状态管理
 │   └── signalsSlice.ts
 └── App.tsx            # 主应用

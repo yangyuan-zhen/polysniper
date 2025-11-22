@@ -315,45 +315,13 @@ export function MatchCard({ match }: MatchCardProps) {
           <div className="text-4xl font-black text-white tracking-tighter">{awayScore ?? '-'}</div>
         </div>
 
-        {/* VS & Score Diff / Time Remaining */}
+        {/* VS & Score Diff */}
         <div className="px-6 text-center">
-          {/* 进行中显示剩余时间，优先使用frontEndMatchStatus */}
-          {matchStatus === 'INPROGRESS' ? (
-            <>
-              <div className="text-xs font-medium text-purple-400 mb-1">第{currentQuarter}节</div>
-              <div className="text-lg font-bold text-white mb-1">
-                {(() => {
-                  // 优先从 frontEndMatchStatus.desc 提取剩余时间
-                  if (match.frontEndMatchStatus?.desc) {
-                    const desc = match.frontEndMatchStatus.desc;
-                    
-                    // 格式1: "剩8:09" (分:秒)
-                    const timeMatch = desc.match(/剩(\d+):(\d+)/);
-                    if (timeMatch) {
-                      return `${timeMatch[1]}:${timeMatch[2].padStart(2, '0')}`;
-                    }
-                    
-                    // 格式2: "剩26秒" (只有秒)
-                    const secondsMatch = desc.match(/剩(\d+)秒/);
-                    if (secondsMatch) {
-                      return `0:${secondsMatch[1]}`; // 不补零，直接显示
-                    }
-                  }
-                  // 回退到 costTime
-                  return costTime || 'LIVE';
-                })()}
-              </div>
-              <div className="text-[10px] text-gray-600">剩余</div>
-            </>
-          ) : (
-            <>
-              <div className="text-xs text-gray-600 mb-1">VS</div>
-              <div className={`text-2xl font-black ${scoreDiff > 0 ? 'text-green-400' : scoreDiff < 0 ? 'text-red-400' : 'text-gray-500'}`}>
-                {formattedDiff}
-              </div>
-              <div className="text-[10px] text-gray-600 mt-1">分差</div>
-            </>
-          )}
+          <div className="text-xs text-gray-600 mb-1">VS</div>
+          <div className={`text-2xl font-black ${scoreDiff > 0 ? 'text-green-400' : scoreDiff < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+            {formattedDiff}
+          </div>
+          <div className="text-[10px] text-gray-600 mt-1">分差</div>
         </div>
 
         {/* Home Team */}

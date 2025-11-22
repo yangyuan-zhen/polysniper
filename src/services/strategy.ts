@@ -116,6 +116,11 @@ function analyzeTeam(
   if (absDiff > 20) {
     return null;
   }
+  
+  // 3. 第4节落后超过6分 → 逆转概率极低，不生成买入信号
+  if (quarter === 4 && scoreDiff < -6) {
+    return null;
+  }
 
   // === ESPN胜率偏差分析 ===
   let priceDeviation = 0;

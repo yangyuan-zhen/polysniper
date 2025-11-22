@@ -103,9 +103,17 @@ function analyzeTeam(
 ): TradingSignal | null {
   const timestamp = Date.now();
 
-  // 第4节最后5分钟的红线检查
-  if (quarter === 4 && isLastFiveMinutes(timeRemaining)) {
-    // 第4节最后5分钟，不发出买入信号
+  const absDiff = Math.abs(scoreDiff);
+  const isLast5Min = quarter === 4 && isLastFiveMinutes(timeRemaining);
+
+  // 🚫 过滤规则：垃圾时间和大分差
+  // 1. 最后5分钟 + 分差超过15分 → 比赛已定，不生成信号
+  if (isLast5Min && absDiff > 15) {
+    return null;
+  }
+  
+  // 2. 任何时候分差超过20分 → 比赛失控，不生成信号
+  if (absDiff > 20) {
     return null;
   }
 
@@ -129,11 +137,12 @@ function analyzeTeam(
   const inTimeZone = quarter >= 1 && quarter <= 3;
 
   // === 价格错配套利信号 (ESPN胜率远高于市场价格) ===
-  if (hasPriceEdge) {
+  // 要求：1. 价格偏差≥12%  2. ESPN胜率≥40% (避免推荐弱队)
+  if (hasPriceEdge && espnWinProb !== undefined && espnWinProb >= 0.40) {
     const baseConfidence = 70 + (priceDeviation * 100); // 偏差越大，置信度越高
     const finalConfidence = Math.min(98, Math.max(60, baseConfidence));
     
-    let reason = `⚡ 价格错配！ESPN ${(espnWinProb! * 100).toFixed(0)}% vs 市场 ${(price * 100).toFixed(0)}¢ (偏差+${(priceDeviation * 100).toFixed(0)}%)`;
+    let reason = `⚡ 价格错配！ESPN ${(espnWinProb * 100).toFixed(0)}% vs 市场 ${(price * 100).toFixed(0)}¢ (偏差+${(priceDeviation * 100).toFixed(0)}%)`;
     
     return {
       matchId,
@@ -145,7 +154,7 @@ function analyzeTeam(
       timeRemaining,
       reason,
       confidence: finalConfidence,
-      targetPrice: Math.min(0.85, espnWinProb! + 0.10),
+      targetPrice: Math.min(0.85, espnWinProb + 0.10),
       stopLoss: Math.max(0.15, price - 0.10),
       timestamp,
     };

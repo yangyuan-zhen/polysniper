@@ -51,7 +51,7 @@ interface PolymarketMarket {
 
 // Cache for NBA events to avoid repeated fetches
 let nbaEventsCache: { events: PolymarketEvent[]; timestamp: number } | null = null;
-const CACHE_DURATION = 10 * 1000; // 10 seconds - Gamma API 建议 5-10 秒刷新
+const CACHE_DURATION = 5 * 1000; // 5 seconds - 降低缓存时间以获取更新的价格
 
 export const getEnglishTeamName = (chineseName: string): string => {
   return TEAM_NAME_MAP[chineseName] || chineseName;
@@ -87,7 +87,7 @@ const fetchClobPrice = async (tokenId: string, retries = 2): Promise<string | nu
   return null;
 };
 
-const enrichWithClobPrices = async (market: PolymarketMarket): Promise<PolymarketMarket> => {
+const enrichWithClobPrices = async (market: PolymarketMarket, marketName?: string): Promise<PolymarketMarket> => {
   // If the market has CLOB token IDs, fetch live prices from CLOB
   if (!market.clobTokenIds) {
     return market;
@@ -123,6 +123,7 @@ const enrichWithClobPrices = async (market: PolymarketMarket): Promise<Polymarke
       
       // Allow 3% tolerance for CLOB price variations
       if (Math.abs(sum - 1.0) > 0.03) {
+        console.warn(`⚠️ CLOB价格验证失败: 总和=${(sum * 100).toFixed(1)}¢ (应为100¢), 回退到缓存价格`);
         return market;
       }
       
@@ -136,7 +137,8 @@ const enrichWithClobPrices = async (market: PolymarketMarket): Promise<Polymarke
         clobPrices.splice(0, clobPrices.length, ...normalizedPrices);
       }
     } else {
-      // 部分价格获取失败，静默回退
+      // 部分价格获取失败，回退到缓存价格
+      console.warn(`⚠️ CLOB价格获取失败: ${validClobPrices.length}/${clobPrices.length} 成功, 回退到缓存价格`);
       return market;
     }
 
@@ -164,7 +166,9 @@ const enrichWithClobPrices = async (market: PolymarketMarket): Promise<Polymarke
     });
 
     // 只在成功更新时记录一次
-    console.log('[CLOB] ✓ 实时价格已更新');
+    if (marketName) {
+      console.log(`[CLOB] ✓ ${marketName} 实时价格已更新`);
+    }
 
     return {
       ...market,
@@ -339,13 +343,28 @@ export const searchPolymarketMatch = async (homeTeam: string, awayTeam: string, 
     });
 
     if (winnerMarket) {
-      // Debug: 检查市场数据
+      // Debug: 检查市场数据（更新前）
+      const pricesBefore = typeof winnerMarket.outcomePrices === 'string' 
+        ? JSON.parse(winnerMarket.outcomePrices) 
+        : winnerMarket.outcomePrices;
+      
+      const enrichedMarket = await enrichWithClobPrices(winnerMarket, `${homeEn} vs ${awayEn}`);
+      
+      // 检查价格是否有更新
+      const pricesAfter = typeof enrichedMarket.outcomePrices === 'string'
+        ? JSON.parse(enrichedMarket.outcomePrices)
+        : enrichedMarket.outcomePrices;
+      
+      const pricesChanged = JSON.stringify(pricesBefore) !== JSON.stringify(pricesAfter);
+      
       console.log(`[市场] ${homeEn} vs ${awayEn}:`, {
-        question: winnerMarket.question,
-        outcomes: winnerMarket.outcomes,
-        prices: winnerMarket.outcomePrices
+        question: enrichedMarket.question,
+        outcomes: enrichedMarket.outcomes,
+        prices: pricesAfter,
+        updated: pricesChanged ? '✓ CLOB' : '× 缓存'
       });
-      return await enrichWithClobPrices(winnerMarket);
+      
+      return enrichedMarket;
     } else {
       // 只对有问题的比赛显示警告
       if (isDebug) {

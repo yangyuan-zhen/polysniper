@@ -161,6 +161,70 @@ export async function getRecentGames(
   return getH2HGamesFromESPN(teamA, teamB, startDate, endDate);
 }
 
+// Get recent games for a single team (all games, not just H2H)
+export async function getTeamRecentGames(
+  teamName: string,
+  days: number = 30
+): Promise<H2HGame[]> {
+  const games: H2HGame[] = [];
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  
+  const currentDate = new Date(startDate);
+
+  while (currentDate <= endDate) {
+    // Skip off-season months (July, August, September)
+    const month = currentDate.getMonth();
+    if (month >= 6 && month <= 8) {
+      currentDate.setMonth(9); // Jump to October
+      currentDate.setDate(1);
+      continue;
+    }
+
+    const dateStr = formatDate(currentDate);
+    const dayGames = await fetchNBAGamesByDate(dateStr);
+
+    // Filter games that include this team
+    for (const game of dayGames) {
+      if (!game.competitions || game.competitions.length === 0) continue;
+
+      const competition = game.competitions[0];
+      const competitors = competition.competitors;
+
+      if (competitors.length !== 2) continue;
+
+      const team1 = competitors[0].team.displayName;
+      const team2 = competitors[1].team.displayName;
+
+      // Check if this game involves the team (English name match)
+      const espnTeamName = getESPNTeamName(teamName);
+      if (team1 === espnTeamName || team2 === espnTeamName || team1 === teamName || team2 === teamName) {
+        const homeTeam = competitors.find(c => c.homeAway === 'home')!;
+        const awayTeam = competitors.find(c => c.homeAway === 'away')!;
+
+        games.push({
+          date: competition.date.split('T')[0],
+          home: homeTeam.team.displayName,
+          away: awayTeam.team.displayName,
+          homeScore: parseInt(homeTeam.score) || 0,
+          awayScore: parseInt(awayTeam.score) || 0,
+          winner: homeTeam.winner ? homeTeam.team.displayName : awayTeam.team.displayName,
+          venue: competition.venue?.fullName,
+          attendance: competition.attendance,
+        });
+      }
+    }
+
+    currentDate.setDate(currentDate.getDate() + 1);
+
+    // Reduce delay to speed up scanning
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  return games;
+}
+
 // Get current season games
 export async function getCurrentSeasonGames(
   teamA: string,

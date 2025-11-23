@@ -148,8 +148,9 @@ export function MatchCard({ match }: MatchCardProps) {
       }
     };
 
-    // 初始加载（使用缓存）
-    fetchPolyData(false);
+    // 初始加载（比赛进行中时强制刷新，否则使用缓存）
+    const isLive = matchStatus !== 'COMPLETED' && matchStatus !== 'NOTSTARTED' && matchStatus !== 'SCHEDULED';
+    fetchPolyData(isLive); // 比赛进行中强制刷新以获取最新价格
     fetchWinProb(); // 获取胜率
 
     // 清除旧的定时器
@@ -157,13 +158,14 @@ export function MatchCard({ match }: MatchCardProps) {
       clearInterval(intervalRef.current);
     }
 
-    // 每 30 秒轮询一次 Gamma API（降低更新频率）
+    // 比赛进行中：每20秒轮询；未开始/已结束：每30秒
+    const pollInterval = isLive ? 20000 : 30000;
     intervalRef.current = setInterval(() => {
       if (matchStatus !== 'COMPLETED') {
         fetchPolyData(true);
         fetchWinProb(); // 同时更新胜率
       }
-    }, 30000); // 30 seconds
+    }, pollInterval);
 
     return () => {
       mounted = false;

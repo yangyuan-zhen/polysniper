@@ -56,77 +56,8 @@ export function calculateTeamStats(teamName: string, games: H2HGame[]): TeamStat
   };
 }
 
-// Get or fetch team stats (with caching using ESPN API)
-export async function getOrFetchTeamStats(teamName: string, days: number = 30): Promise<TeamStats | null> {
-  // Only use localStorage in browser
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  try {
-    // Check cache first
-    const cacheKey = `team_stats_${teamName}`;
-    const cached = localStorage.getItem(cacheKey);
-
-    if (cached) {
-      const stats: TeamStats = JSON.parse(cached);
-      const age = Date.now() - stats.lastUpdated;
-      // Cache valid for 1 hour
-      if (age < 60 * 60 * 1000) {
-        console.log(`✅ Using cached stats for ${teamName}`);
-        return stats;
-      }
-    }
-
-    // Fetch fresh data from ESPN API
-    console.log(`🔄 Fetching stats for ${teamName} from ESPN...`);
-    const games = await getTeamRecentGames(teamName, days);
-
-    if (games.length === 0) {
-      console.warn(`⚠️ No games found for ${teamName}`);
-      return null;
-    }
-
-    // Calculate stats from games
-    const stats = calculateTeamStats(teamName, games);
-
-    // Cache the result
-    localStorage.setItem(cacheKey, JSON.stringify(stats));
-
-    console.log(`✅ Successfully loaded stats for ${teamName}: ${stats.wins}W-${stats.losses}L (${(stats.winRate * 100).toFixed(1)}%)`);
-    return stats;
-  } catch (error) {
-    console.error(`❌ Failed to fetch stats for ${teamName}:`, error);
-    return null;
-  }
-}
-
-// Prefetch stats for multiple teams in parallel
-export async function prefetchTeamStats(teamNames: string[]): Promise<Map<string, TeamStats>> {
-  const uniqueTeams = Array.from(new Set(teamNames));
-  const statsMap = new Map<string, TeamStats>();
-
-  console.log(`🔄 Prefetching stats for ${uniqueTeams.length} teams...`);
-
-  // Fetch all teams in parallel
-  const results = await Promise.allSettled(
-    uniqueTeams.map(async (teamName) => {
-      const stats = await getOrFetchTeamStats(teamName);
-      return { teamName, stats };
-    })
-  );
-
-  // Collect successful results
-  for (const result of results) {
-    if (result.status === 'fulfilled' && result.value.stats) {
-      statsMap.set(result.value.teamName, result.value.stats);
-    }
-  }
-
-  console.log(`✅ Prefetched stats for ${statsMap.size} teams`);
-
-  return statsMap;
-}
+// Note: getOrFetchTeamStats and prefetchTeamStats functions removed
+// These functions relied on ESPN API which is no longer needed
 
 /**
  * 评估球队实力等级

@@ -23,6 +23,7 @@
     "@types/node": "^24.10.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
+    "@vercel/node": "^5.5.9",
     "@vitejs/plugin-react-swc": "^4.2.1",
     "autoprefixer": "^10.4.22",
     "eslint": "^9.39.1",

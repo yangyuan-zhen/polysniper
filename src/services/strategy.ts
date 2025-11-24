@@ -18,6 +18,17 @@ export interface PriceData {
   homeRawPrice: number;
   awayRawPrice: number;
   espnHomeWinProb?: number; // ESPN预测主队胜率 (0-1)
+  // Market depth metrics for signal confidence adjustment
+  marketDepth?: {
+    spread: number;           // 价差 (0-1)
+    liquidity: 'high' | 'medium' | 'low';
+    depthImbalance: number;   // 买卖失衡 (-1 to 1)
+    confidence: number;       // 市场置信度 (0-1)
+  };
+  tradingMomentum?: {
+    buyPressure: number;      // 买方压力 (0-1)
+    momentum: 'bullish' | 'bearish' | 'neutral';
+  };
 }
 
 export type SignalType = 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'SELL' | 'STRONG_SELL';
@@ -70,7 +81,8 @@ export function analyzeMatch(
     priceData.homeRawPrice, // 主队价格
     quarter,
     timeRemaining,
-    priceData.espnHomeWinProb // ESPN主队胜率
+    priceData.espnHomeWinProb, // ESPN主队胜率
+    priceData // 传入完整的价格数据（包含市场深度）
   );
   if (homeSignal) signals.push(homeSignal);
 
@@ -82,7 +94,8 @@ export function analyzeMatch(
     priceData.awayRawPrice, // 客队价格
     quarter,
     timeRemaining,
-    priceData.espnHomeWinProb ? (1 - priceData.espnHomeWinProb) : undefined // ESPN客队胜率
+    priceData.espnHomeWinProb ? (1 - priceData.espnHomeWinProb) : undefined, // ESPN客队胜率
+    priceData // 传入完整的价格数据（包含市场深度）
   );
   if (awaySignal) signals.push(awaySignal);
 
@@ -99,7 +112,8 @@ function analyzeTeam(
   price: number,
   quarter: number,
   timeRemaining: string,
-  espnWinProb?: number // ESPN预测该队胜率 (0-1)
+  espnWinProb: number | undefined, // ESPN预测该队胜率 (0-1)
+  fullPriceData?: PriceData // 完整价格数据（包含市场深度和动量）
 ): TradingSignal | null {
   const timestamp = Date.now();
 
@@ -144,7 +158,17 @@ function analyzeTeam(
   // === 价格错配套利信号 (ESPN胜率远高于市场价格) ===
   // 要求：1. 价格偏差≥12%  2. ESPN胜率≥40% (避免推荐弱队)
   if (hasPriceEdge && espnWinProb !== undefined && espnWinProb >= 0.40) {
-    const baseConfidence = 70 + (priceDeviation * 100); // 偏差越大，置信度越高
+    let baseConfidence = 70 + (priceDeviation * 100); // 偏差越大，置信度越高
+    
+    // 根据市场深度调整置信度
+    if (fullPriceData?.marketDepth) {
+      baseConfidence *= fullPriceData.marketDepth.confidence;
+      // 流动性惩罚
+      if (fullPriceData.marketDepth.liquidity === 'low') {
+        baseConfidence *= 0.8;
+      }
+    }
+    
     const finalConfidence = Math.min(98, Math.max(60, baseConfidence));
     
     let reason = `⚡ 价格错配！ESPN ${(espnWinProb * 100).toFixed(0)}% vs 市场 ${(price * 100).toFixed(0)}¢ (偏差+${(priceDeviation * 100).toFixed(0)}%)`;
@@ -168,14 +192,45 @@ function analyzeTeam(
   // === 强买入信号 (三个条件全部满足) ===
   if (inPriceZone && scoreDiffInRange && inTimeZone) {
     // 根据ESPN胜率调整置信度
-    const baseConfidence = calculateConfidence(price, scoreDiff, quarter, espnWinProb);
+    let baseConfidence = calculateConfidence(price, scoreDiff, quarter, espnWinProb);
     const espnBonus = hasPriceEdge ? 15 : (priceDeviation > 0.05 ? 8 : 0); // ESPN支持加分
+    
+    // 市场深度调整
+    if (fullPriceData?.marketDepth) {
+      baseConfidence *= fullPriceData.marketDepth.confidence;
+      
+      // 添加市场状态加成/惩罚
+      if (fullPriceData.marketDepth.liquidity === 'low') {
+        baseConfidence *= 0.85; // 低流动性惩罚
+      }
+      if (fullPriceData.marketDepth.spread > 0.05) {
+        baseConfidence *= 0.9; // 大价差惩罚
+      }
+    }
+    
+    // 交易动量加成
+    if (fullPriceData?.tradingMomentum) {
+      if (fullPriceData.tradingMomentum.momentum === 'bullish') {
+        baseConfidence *= 1.05; // 看涨动量加成
+      } else if (fullPriceData.tradingMomentum.momentum === 'bearish') {
+        baseConfidence *= 0.95; // 看跌动量惩罚
+      }
+    }
+    
     const finalConfidence = Math.min(100, Math.max(30, baseConfidence + espnBonus));
     
-    // 生成信号原因（包含ESPN信息）
+    // 生成信号原因（包含ESPN和市场深度信息）
     let reason = `💎 黄金进场点！价格 ${(price * 100).toFixed(1)}¢，落后 ${Math.abs(scoreDiff)} 分`;
     if (espnWinProb && priceDeviation > 0.05) {
       reason += ` (ESPN ${(espnWinProb * 100).toFixed(0)}%)`;
+    }
+    if (fullPriceData?.marketDepth) {
+      const { spread, liquidity } = fullPriceData.marketDepth;
+      if (liquidity === 'high' && spread < 0.02) {
+        reason += ' ✓高流动性';
+      } else if (liquidity === 'low' || spread > 0.05) {
+        reason += ' ⚠️流动性差';
+      }
     }
     
     return {

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import type { Match } from '../services/api';
-import { searchPolymarketMatch, normalizeMarketData, getEnglishTeamName } from '../services/polymarket';
+import { searchPolymarketMatch, normalizeMarketData, getEnglishTeamName, subscribeToRealtimePrices } from '../services/polymarket';
 import { analyzeMatch } from '../services/strategy';
 import { useSignals } from '../contexts/SignalContext';
 import { getTeamInjuries, getGameWinProbability, getESPNTeamName } from '../services/espn';
@@ -49,6 +49,7 @@ export function MatchCard({ match }: MatchCardProps) {
   const [awayInjuries, setAwayInjuries] = useState<TeamInjuries | null>(null);
   const [winProb, setWinProb] = useState<WinProbability | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [tokenIds, setTokenIds] = useState<string[]>([]);
 
   // Handle card click to open modal
   const handleCardClick = async () => {
@@ -80,6 +81,23 @@ export function MatchCard({ match }: MatchCardProps) {
         const homeEn = getEnglishTeamName(homeTeamName);
         const awayEn = getEnglishTeamName(awayTeamName);
         const { homePrice, awayPrice, homeRawPrice, awayRawPrice } = normalizeMarketData(market, homeEn, awayEn);
+        
+        // Extract token IDs for WebSocket subscription
+        if (market.clobTokenIds) {
+          let extractedTokenIds: string[] = [];
+          try {
+            if (typeof market.clobTokenIds === 'string') {
+              extractedTokenIds = JSON.parse(market.clobTokenIds);
+            } else if (Array.isArray(market.clobTokenIds)) {
+              extractedTokenIds = market.clobTokenIds;
+            }
+            if (extractedTokenIds.length > 0 && JSON.stringify(extractedTokenIds) !== JSON.stringify(tokenIds)) {
+              setTokenIds(extractedTokenIds);
+            }
+          } catch (e) {
+            // Ignore parsing errors
+          }
+        }
         
         // 检查价格是否变化（避免重复更新）
         const pricesChanged = !lastPricesRef.current || 
@@ -174,6 +192,26 @@ export function MatchCard({ match }: MatchCardProps) {
       }
     };
   }, [homeTeamName, awayTeamName, matchStatus, updateSignals, match]);
+
+  // Subscribe to WebSocket real-time price updates
+  useEffect(() => {
+    if (tokenIds.length === 0 || matchStatus === 'COMPLETED') {
+      return;
+    }
+
+    console.log(`[WebSocket] Subscribing to token IDs:`, tokenIds);
+    
+    const unsubscribe = subscribeToRealtimePrices(tokenIds, (tokenId, price) => {
+      console.log(`[WebSocket] Price update for token ${tokenId}: ${price}`);
+      // The enrichWithRealtimePrices function will use these cached prices automatically
+      // We don't need to manually update state here as the polling will pick it up
+    });
+
+    return () => {
+      console.log(`[WebSocket] Unsubscribing from token IDs:`, tokenIds);
+      unsubscribe();
+    };
+  }, [tokenIds, matchStatus]);
 
   // 当比分更新时，重新计算信号
   useEffect(() => {

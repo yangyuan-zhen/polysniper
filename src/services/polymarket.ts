@@ -349,7 +349,8 @@ export const searchPolymarketMatch = async (homeTeam: string, awayTeam: string, 
         ? JSON.parse(winnerMarket.outcomePrices) 
         : winnerMarket.outcomePrices;
       
-      const enrichedMarket = await enrichWithClobPrices(winnerMarket, `${homeEn} vs ${awayEn}`);
+      // Use WebSocket prices with REST API fallback
+      const enrichedMarket = await enrichWithRealtimePrices(winnerMarket, `${homeEn} vs ${awayEn}`);
       
       // 检查价格是否有更新
       const pricesAfter = typeof enrichedMarket.outcomePrices === 'string'

@@ -58,11 +58,15 @@ export const getEnglishTeamName = (chineseName: string): string => {
   return TEAM_NAME_MAP[chineseName] || chineseName;
 };
 
+/**
+ * Fetch CLOB price via REST API (Fallback only - WebSocket is preferred)
+ * This is only used when WebSocket prices are unavailable
+ */
 const fetchClobPrice = async (tokenId: string, retries = 2): Promise<string | null> => {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout - CLOB 建议 2-5 秒
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
       
       const response = await fetch(`/api/clob/price?token_id=${tokenId}&side=sell`, {
         signal: controller.signal
@@ -78,16 +82,19 @@ const fetchClobPrice = async (tokenId: string, retries = 2): Promise<string | nu
       return data.price;
     } catch (error) {
       if (attempt === retries) {
-        // 静默失败，不打印错误（避免刷屏）
         return null;
       }
-      // 短暂延迟后重试
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
   return null;
 };
 
+/**
+ * Enrich market with CLOB prices via REST API (Fallback method)
+ * Note: This is only used as fallback when WebSocket prices are unavailable
+ * Prefer using enrichWithRealtimePrices() which uses WebSocket first
+ */
 const enrichWithClobPrices = async (market: PolymarketMarket, marketName?: string): Promise<PolymarketMarket> => {
   // If the market has CLOB token IDs, fetch live prices from CLOB
   if (!market.clobTokenIds) {
@@ -113,7 +120,10 @@ const enrichWithClobPrices = async (market: PolymarketMarket, marketName?: strin
   }
   
   try {
-    // Fetch prices for each outcome
+    // Fetch prices via REST API (fallback method)
+    if (marketName) {
+      console.log(`[REST Fallback] Fetching prices for ${marketName}`);
+    }
     const pricePromises = tokenIds.map(tokenId => fetchClobPrice(tokenId));
     const clobPrices = await Promise.all(pricePromises);
 
@@ -168,7 +178,7 @@ const enrichWithClobPrices = async (market: PolymarketMarket, marketName?: strin
 
     // 只在成功更新时记录一次
     if (marketName) {
-      console.log(`[CLOB] ✓ ${marketName} 实时价格已更新`);
+      console.log(`[REST Fallback] ✓ ${marketName} REST API价格已更新`);
     }
 
     return {
@@ -605,6 +615,9 @@ export const enrichWithRealtimePrices = async (
     }
   }
 
-  // Fallback to REST API
+  // Fallback to REST API when WebSocket prices unavailable
+  if (marketName) {
+    console.log(`[RT Prices] ⚠️ ${marketName} - WebSocket价格不可用，使用REST API`);
+  }
   return enrichWithClobPrices(market, marketName);
 };

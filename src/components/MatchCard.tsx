@@ -259,29 +259,41 @@ export function MatchCard({ match }: MatchCardProps) {
       }
     };
 
-    // 初始加载（比赛进行中时强制刷新，否则使用缓存）
+    // 初始加载（添加随机延迟，避免所有组件同时发起请求）
     const isLive = matchStatus !== 'COMPLETED' && matchStatus !== 'NOTSTARTED' && matchStatus !== 'SCHEDULED';
-    fetchPolyData(isLive); // 比赛进行中强制刷新以获取最新价格
-    fetchWinProb(); // 获取胜率
+    
+    // 随机延迟0-5秒，避免所有MatchCard同时请求导致 ERR_INSUFFICIENT_RESOURCES
+    const initialDelay = Math.random() * 5000;
+    
+    const initialTimeout = setTimeout(() => {
+      fetchPolyData(isLive); // 比赛进行中强制刷新以获取最新价格
+      fetchWinProb(); // 获取胜率
+    }, initialDelay);
 
     // 清除旧的定时器
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
 
-    // WebSocket + 轮询混合模式：
-    // - WebSocket提供实时价格更新（< 1秒）
-    // - 轮询作为backup，频率降低：进行中60秒，未开始120秒
-    const pollInterval = isLive ? 60000 : 120000; // 降低轮询频率
-    intervalRef.current = setInterval(() => {
-      if (matchStatus !== 'COMPLETED') {
-        fetchPolyData(true);
-        fetchWinProb(); // 同时更新胜率
-      }
-    }, pollInterval);
+    // REST API轮询模式（WebSocket禁用时的主要更新方式）
+    // - 比赛进行中：30秒更新一次（降低频率，避免资源耗尽）
+    // - 比赛未开始：120秒更新一次
+    const pollInterval = isLive ? 30000 : 120000;
+    
+    // 轮询也添加初始随机延迟
+    const pollTimeout = setTimeout(() => {
+      intervalRef.current = setInterval(() => {
+        if (matchStatus !== 'COMPLETED') {
+          fetchPolyData(true);
+          fetchWinProb(); // 同时更新胜率
+        }
+      }, pollInterval);
+    }, initialDelay);
 
     return () => {
       mounted = false;
+      clearTimeout(initialTimeout); // 清除初始延迟
+      clearTimeout(pollTimeout); // 清除轮询延迟
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
@@ -290,6 +302,14 @@ export function MatchCard({ match }: MatchCardProps) {
 
   // Subscribe to WebSocket real-time price updates
   useEffect(() => {
+    // 环境变量开关：可以禁用WebSocket，只使用REST API轮询
+    const ENABLE_WEBSOCKET = import.meta.env.VITE_ENABLE_WEBSOCKET !== 'false';
+    
+    if (!ENABLE_WEBSOCKET) {
+      console.log('[WebSocket] Disabled by env variable, using REST API polling only');
+      return;
+    }
+    
     if (tokenIds.length === 0 || matchStatus === 'COMPLETED') {
       return;
     }

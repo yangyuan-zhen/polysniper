@@ -5,6 +5,8 @@
  * to enhance signal confidence for NBA game predictions
  */
 
+import { queuedFetch } from './requestQueue';
+
 interface OrderBookLevel {
   price: string;
   size: string;
@@ -62,7 +64,7 @@ export async function fetchOrderBook(tokenId: string): Promise<OrderBookData | n
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
       
-      const response = await fetch(`/api/clob/book?token_id=${tokenId}`, {
+      const response = await queuedFetch(`/api/clob/book?token_id=${tokenId}`, {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -106,7 +108,7 @@ export async function fetchSpread(tokenId: string): Promise<number | null> {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
       
-      const response = await fetch(`/api/clob/spread?token_id=${tokenId}`, {
+      const response = await queuedFetch(`/api/clob/spread?token_id=${tokenId}`, {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -153,7 +155,7 @@ export async function fetchRecentTrades(
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
       
-      const response = await fetch(
+      const response = await queuedFetch(
         `/api/polymarket/trades?market=${conditionId}&limit=${limit}`,
         { signal: controller.signal }
       );

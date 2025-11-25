@@ -1,3 +1,5 @@
+import { queuedFetch } from './requestQueue';
+
 export interface Match {
   matchId: string;
   matchStatus: string; // "COMPLETED", "NOTSTARTED", etc.
@@ -41,7 +43,7 @@ export const fetchDailyMatches = async (): Promise<Match[]> => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
       
-      const response = await fetch(
+      const response = await queuedFetch(
         '/api/hupu/1/7.5.60/basketballapi/scheduleList?competitionTag=nba',
         { signal: controller.signal }
       );
@@ -57,7 +59,23 @@ export const fetchDailyMatches = async (): Promise<Match[]> => {
       const currentDate = data.result.scheduleListStats.currentDate;
       const todayGames = data.result.gameList.find(g => g.day === currentDate);
       
-      return todayGames ? todayGames.matchList : [];
+      const matches = todayGames ? todayGames.matchList : [];
+      
+      // 统计比赛状态
+      const liveGames = matches.filter(m => m.matchStatus === 'INPROGRESS').length;
+      const completedGames = matches.filter(m => m.matchStatus === 'COMPLETED').length;
+      const upcomingGames = matches.filter(m => m.matchStatus === 'NOTSTARTED' || m.matchStatus === 'SCHEDULED').length;
+      
+      console.log(`[虎扑API] ✅ 获取 ${matches.length} 场比赛 (进行中:${liveGames} 已结束:${completedGames} 未开始:${upcomingGames})`);
+      
+      // 显示进行中比赛的比分
+      if (liveGames > 0) {
+        matches.filter(m => m.matchStatus === 'INPROGRESS').forEach(m => {
+          console.log(`  🏀 ${m.homeTeamName} ${m.homeScore} - ${m.awayScore} ${m.awayTeamName} (Q${m.currentQuarter || '?'} ${m.costTime || ''})`);
+        });
+      }
+      
+      return matches;
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.warn(`[API] Hupu request timeout (attempt ${attempt + 1}/${maxRetries + 1})`);

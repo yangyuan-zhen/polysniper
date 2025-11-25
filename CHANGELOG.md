@@ -1,14 +1,96 @@
 # 📝 PolySniper 更新日志
 
+## [v2.0.2] - 2025-11-25
+
+### 🔄 架构简化
+
+#### 移除WebSocket，仅使用REST API ⚡
+- ✅ **完全移除WebSocket代码** - 简化系统架构
+  - 删除 `subscribeToRealtimePrices` 相关代码
+  - 删除 WebSocket token ID 处理
+  - 删除 WebSocket useEffect 钩子
+- ✅ **移除市场深度分析** - 简化数据获取
+  - 删除 `analyzeMarketDepth` 调用
+  - 删除 `analyzeTradingMomentum` 调用
+  - 减少API请求数量
+- ✅ **仅使用REST API轮询** - 更稳定可靠
+  - 价格更新：每45秒
+  - 比分更新：每10秒
+  - 胜率更新：每45秒
+
+**原因**：
+WebSocket连接不稳定，经常出现连接失败和价格不更新的问题。REST API轮询更简单、更可靠。
+
+**效果**：
+- 系统更简单，代码更少
+- 更稳定，不会出现WebSocket连接问题
+- 价格更新延迟45秒（可接受）
+
+---
+
 ## [v2.0.1] - 2025-11-25
 
 ### 🐛 Bug修复
 
-#### API请求超时和TLS连接错误修复
-- ✅ **添加重试机制** - 所有API请求支持最多2次重试
+#### 虎扑比分自动更新优化 ⚡
+- ✅ **加快刷新频率** - 从30秒改为10秒
+  - 比分更新更及时，无需手动刷新
+  - 配合请求队列，安全增加刷新频率
+- ✅ **详细的更新日志** - 控制台显示：
+  - 每次刷新时显示比赛统计（进行中/已结束/未开始）
+  - 实时显示每场进行中比赛的比分和节次
+  - 检测到比分变化时显示 "📊 比分已更新！"
+- ✅ **智能变化检测** - 只在比分真正变化时提示
+
+**问题背景**：
+用户反馈虎扑API的比分没有实时更新，需要手动刷新浏览器。
+
+**解决方案**：
+1. 将App.tsx中的轮询间隔从30秒缩短到10秒
+2. 添加详细的日志，显示每场比赛的实时比分
+3. 智能检测比分变化，避免误报
+
+---
+
+#### WebSocket价格实时显示修复 🔌
+- ✅ **直接更新UI** - 收到WebSocket价格立即显示
+  - 不再等待market数据重新获取
+  - UI更新延迟 < 100ms
+- ✅ **异步计算信号** - 信号计算不阻塞UI
+  - 价格先显示，信号后更新
+  - 用户体验更流畅
+- ✅ **增强调试日志** - 详细的WebSocket价格更新日志
+  - 显示队伍名、token ID、价格
+  - 更容易排查问题
+
+**问题背景**：
+用户反馈WebSocket获取的价格没有显示在界面上。
+
+**解决方案**：
+1. WebSocket收到价格后直接调用`setPolyData`更新UI
+2. 信号计算移到`setTimeout`异步执行
+3. 添加详细日志方便调试
+
+---
+
+#### API请求队列和并发控制 🎯
+- ✅ **全局请求队列** - 新增 `requestQueue.ts` 服务
+  - 限制最多3个并发请求，避免浏览器/代理过载
+  - 请求之间延迟200ms，避免瞬时请求过多
+  - 自动排队处理，先进先出
+- ✅ **所有API使用队列** - `queuedFetch` 替代原生 `fetch`
   - `marketDepth.ts`: fetchOrderBook, fetchSpread, fetchRecentTrades
   - `api.ts`: fetchDailyMatches（虎扑API）
-  - `polymarket.ts`: fetchClobPrice（优化超时和重试）
+  - `polymarket.ts`: fetchClobPrice, fetchNBAEvents
+  - `espn.ts`: fetchNBAGamesByDate, getTeamInjuries, getGameWinProbability
+- ✅ **优化轮询策略** - 减少并发请求峰值
+  - 初始延迟：0-15秒（原5秒）
+  - 轮询间隔：45秒（原30秒）
+  - 轮询抖动：额外0-10秒 + 每次0-3秒抖动
+  - 避免所有组件同步请求
+
+#### API请求超时和TLS连接错误修复
+- ✅ **添加重试机制** - 所有API请求支持最多2次重试
 - ✅ **超时控制** - 添加AbortController超时控制
   - 虎扑API: 8秒超时（较慢）
   - Polymarket CLOB API: 5秒超时
@@ -25,6 +107,21 @@
 2. 优化Vite代理配置，添加超时和错误处理
 3. 请求失败时自动重试，避免页面卡死
 4. 使用指数退避策略避免过度重试
+
+#### WebSocket错误处理优化
+- ✅ **修复未捕获的Promise错误** - "Uncaught (in promise) Error: disconnected"
+  - `initializeWebSocket` 添加 try-catch，不再抛出未捕获错误
+  - `ws.onerror` 不再reject Promise，避免页面报错
+  - WebSocket断开时优雅降级，不影响REST API功能
+- ✅ **改进错误日志** - 更清晰的WebSocket连接状态提示
+
+**问题背景**：
+WebSocket连接失败时，Promise错误没有被捕获，导致浏览器控制台出现红色"Uncaught (in promise)"警告，影响用户体验。
+
+**解决方案**：
+添加完整的错误处理，确保WebSocket失败时程序继续使用REST API轮询，不会中断。
+
+---
 
 #### 胜率过滤优化
 - ✅ **添加买入信号胜率门槛** - 避免推荐弱队买入

@@ -1,5 +1,5 @@
-import { polymarketThrottler } from './requestThrottle';
 import { getWebSocketClient } from './polymarketWebSocket';
+import { queuedFetch } from './requestQueue';
 
 const TEAM_NAME_MAP: Record<string, string> = {
   '凯尔特人': 'Celtics',
@@ -70,7 +70,7 @@ const fetchClobPrice = async (tokenId: string, retries = 2): Promise<string | nu
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
       
-      const response = await fetch(`/api/clob/price?token_id=${tokenId}&side=sell`, {
+      const response = await queuedFetch(`/api/clob/price?token_id=${tokenId}&side=sell`, {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -212,19 +212,43 @@ async function fetchNBAEvents(skipCache = false): Promise<PolymarketEvent[]> {
   try {
     const url = `/api/polymarket/events?tag_id=745&closed=false&limit=100`;
     
-    // 使用节流器限制并发请求
-    const events: PolymarketEvent[] = await polymarketThrottler.request(
-      'fetchNBAEvents',
-      async () => {
-        const response = await fetch(url);
+    // 使用请求队列和重试机制
+    const maxRetries = 2;
+    const timeout = 8000; // 8秒超时
+    
+    let events: PolymarketEvent[] = [];
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        
+        const response = await queuedFetch(url, {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
         
         if (!response.ok) {
+          if (attempt < maxRetries) continue; // 重试
           throw new Error(`Polymarket API error: ${response.status}`);
         }
         
-        return await response.json();
+        events = await response.json();
+        break; // 成功，跳出循环
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          console.warn(`[Polymarket] Events request timeout (attempt ${attempt + 1}/${maxRetries + 1})`);
+        } else {
+          console.warn(`[Polymarket] Error fetching events (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
+        }
+        
+        if (attempt === maxRetries) {
+          throw error; // 所有重试都失败
+        }
+        
+        // 等待后重试
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
       }
-    );
+    }
     
     // Filter for actual games (not futures) - games have "vs" or "vs." in title
     const gameEvents = events.filter((event: PolymarketEvent) => {

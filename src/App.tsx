@@ -50,9 +50,29 @@ function App() {
   }, [matches, allSignals]);
 
   useEffect(() => {
+    let previousMatches: Match[] = [];
+    
     const loadMatches = async () => {
       try {
         const data = await fetchDailyMatches();
+        
+        // 检查比分是否有变化
+        if (previousMatches.length > 0) {
+          const scoreChanged = data.some(newMatch => {
+            const oldMatch = previousMatches.find(m => m.matchId === newMatch.matchId);
+            return oldMatch && (
+              oldMatch.homeScore !== newMatch.homeScore ||
+              oldMatch.awayScore !== newMatch.awayScore ||
+              oldMatch.matchStatus !== newMatch.matchStatus
+            );
+          });
+          
+          if (scoreChanged) {
+            console.log('[App] 📊 比分已更新！');
+          }
+        }
+        
+        previousMatches = data;
         setMatches(data);
       } catch (error) {
         console.error('Failed to load matches', error);
@@ -64,14 +84,16 @@ function App() {
     // 初始加载
     loadMatches();
 
-    // 每 30 秒自动刷新比赛列表（降低频率，避免资源耗尽）
+    // 每 10 秒自动刷新比赛列表（提高比分更新频率）
     // 具体比赛数据由各个MatchCard组件独立轮询
+    // 使用请求队列后可以安全地增加刷新频率
     const interval = setInterval(() => {
+      console.log('[App] 🔄 Refreshing match scores...');
       loadMatches();
-    }, 30000); // 30 seconds
+    }, 10000); // 10 seconds
 
     return () => clearInterval(interval);
-  }, []);
+  }, []); // 空依赖数组，避免无限循环
 
   const handleRefresh = async () => {
     setLoading(true);

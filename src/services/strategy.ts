@@ -17,7 +17,8 @@ export interface PriceData {
   awayPrice: string;
   homeRawPrice: number;
   awayRawPrice: number;
-  espnHomeWinProb?: number; // ESPN预测主队胜率 (0-1)
+  espnHomeWinProb?: number; // ESPN预测主队胜率 (0-1) - 实时数据
+  espnPregameHomeWinProb?: number; // ESPN赛前预测主队胜率 (0-1) - 用于判断强队
   // Market depth metrics for signal confidence adjustment
   marketDepth?: {
     spread: number;           // 价差 (0-1)
@@ -81,7 +82,8 @@ export function analyzeMatch(
     priceData.homeRawPrice, // 主队价格
     quarter,
     timeRemaining,
-    priceData.espnHomeWinProb, // ESPN主队胜率
+    priceData.espnHomeWinProb, // ESPN主队实时胜率
+    priceData.espnPregameHomeWinProb, // ESPN主队赛前胜率
     priceData // 传入完整的价格数据（包含市场深度）
   );
   if (homeSignal) signals.push(homeSignal);
@@ -94,7 +96,8 @@ export function analyzeMatch(
     priceData.awayRawPrice, // 客队价格
     quarter,
     timeRemaining,
-    priceData.espnHomeWinProb ? (1 - priceData.espnHomeWinProb) : undefined, // ESPN客队胜率
+    priceData.espnHomeWinProb ? (1 - priceData.espnHomeWinProb) : undefined, // ESPN客队实时胜率
+    priceData.espnPregameHomeWinProb ? (1 - priceData.espnPregameHomeWinProb) : undefined, // ESPN客队赛前胜率
     priceData // 传入完整的价格数据（包含市场深度）
   );
   if (awaySignal) signals.push(awaySignal);
@@ -112,7 +115,8 @@ function analyzeTeam(
   price: number,
   quarter: number,
   timeRemaining: string,
-  espnWinProb: number | undefined, // ESPN预测该队胜率 (0-1)
+  espnWinProb: number | undefined, // ESPN预测该队实时胜率 (0-1)
+  espnPregameWinProb: number | undefined, // ESPN预测该队赛前胜率 (0-1) - 判断强队
   fullPriceData?: PriceData // 完整价格数据（包含市场深度和动量）
 ): TradingSignal | null {
   const timestamp = Date.now();
@@ -140,10 +144,18 @@ function analyzeTeam(
   let priceDeviation = 0;
   let hasPriceEdge = false;
   if (espnWinProb !== undefined) {
-    // 计算价格偏差：ESPN胜率 - Polymarket价格
+    // 计算价格偏差：ESPN实时胜率 - Polymarket价格
     priceDeviation = espnWinProb - price;
     // 如果ESPN预测明显高于市场价格，存在价格优势
     hasPriceEdge = priceDeviation >= 0.12; // 偏差≥12%
+  }
+
+  // === 强队抄底信号（赛前预测强队比赛中落后）===
+  // 条件：1. 赛前ESPN胜率≥55% (强队)  2. 当前比分落后 (scoreDiff < 0)  3. 价格被低估 (价格 < 赛前胜率 - 10%)
+  let isStrongTeamDip = false;
+  if (espnPregameWinProb !== undefined && espnPregameWinProb >= 0.55 && scoreDiff < 0) {
+    const pregamePriceGap = espnPregameWinProb - price;
+    isStrongTeamDip = pregamePriceGap >= 0.10; // 价格比赛前预测低10%+
   }
 
   // === 信号1：价格击球区 (0.35 ~ 0.45) ===
@@ -155,7 +167,44 @@ function analyzeTeam(
   // === 信号3：时间区间 (第1-3节或第4节前5分钟) ===
   const inTimeZone = quarter >= 1 && quarter <= 3;
 
-  // === 价格错配套利信号 (ESPN胜率远高于市场价格) ===
+  // === 强队抄底信号优先级最高 ===
+  if (isStrongTeamDip && espnPregameWinProb !== undefined) {
+    let baseConfidence = 85 + Math.min(20, (espnPregameWinProb - 0.55) * 100); // 赛前胜率越高，置信度越高
+    
+    // 分差小的时候置信度更高
+    const absDiff = Math.abs(scoreDiff);
+    if (absDiff <= 3) baseConfidence += 10;
+    else if (absDiff <= 6) baseConfidence += 5;
+    
+    // 根据市场深度调整置信度
+    if (fullPriceData?.marketDepth) {
+      baseConfidence *= fullPriceData.marketDepth.confidence;
+      if (fullPriceData.marketDepth.liquidity === 'low') {
+        baseConfidence *= 0.85;
+      }
+    }
+    
+    const finalConfidence = Math.min(98, Math.max(70, baseConfidence));
+    
+    let reason = `🔥 强队抄底！赛前预测 ${(espnPregameWinProb * 100).toFixed(0)}% vs 当前价格 ${(price * 100).toFixed(0)}¢ (落后${Math.abs(scoreDiff)}分)`;
+    
+    return {
+      matchId,
+      team,
+      type: 'STRONG_BUY',
+      price,
+      scoreDiff,
+      quarter: `第${quarter}节`,
+      timeRemaining,
+      reason,
+      confidence: finalConfidence,
+      targetPrice: Math.min(0.85, espnPregameWinProb + 0.05),
+      stopLoss: Math.max(0.15, price - 0.12),
+      timestamp,
+    };
+  }
+
+  // === 价格错配套利信号 (ESPN实时胜率远高于市场价格) ===
   // 要求：1. 价格偏差≥12%  2. ESPN胜率≥40% (避免推荐弱队)
   if (hasPriceEdge && espnWinProb !== undefined && espnWinProb >= 0.40) {
     let baseConfidence = 70 + (priceDeviation * 100); // 偏差越大，置信度越高

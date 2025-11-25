@@ -100,9 +100,9 @@ export class PolymarketWebSocketClient {
         };
 
         this.ws.onerror = (error) => {
-          console.error('[WebSocket] Error:', error);
+          console.error('[WebSocket] Connection error:', error);
           this.isConnecting = false;
-          reject(error);
+          // 不再reject，等待onclose处理
         };
 
         this.ws.onclose = () => {
@@ -353,10 +353,15 @@ export async function initializeWebSocket(tokenIds: string[]): Promise<Polymarke
   const client = getWebSocketClient();
   
   if (!client.isConnected()) {
-    await client.connect();
+    try {
+      await client.connect();
+    } catch (error) {
+      console.error('[WebSocket] Failed to connect:', error);
+      // 返回客户端但不抛出错误，允许程序继续运行
+    }
   }
   
-  if (tokenIds.length > 0) {
+  if (tokenIds.length > 0 && client.isConnected()) {
     client.subscribeToTokens(tokenIds);
   }
   

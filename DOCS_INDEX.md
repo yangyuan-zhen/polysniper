@@ -1,8 +1,16 @@
-# 📚 PolySniper 文档索引
+# PolySniper 文档索引
+
+## 🔥 快速链接
+
+- **[价格获取失败调试](./DEBUG_PRICES.md)** - 为什么有些比赛拿不到价格？
+- **[故障排除指南](./TROUBLESHOOTING.md)** - TLS错误、API超时、WebSocket问题
+- **[信号策略说明](./SIGNALS_GUIDE.md)** - 理解买入/卖出信号
+
+---
 
 ## 核心文档
 
-### 📝 [CHANGELOG.md](./CHANGELOG.md) 🆕
+### [CHANGELOG.md](./CHANGELOG.md) 
 **项目更新日志**
 - v2.0.0版本重大更新
 - WebSocket实时价格推送

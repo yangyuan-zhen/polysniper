@@ -1,12 +1,11 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import type { Match } from '../services/api';
-import { searchPolymarketMatch, normalizeMarketData, getEnglishTeamName, subscribeToRealtimePrices } from '../services/polymarket';
+import { searchPolymarketMatch, normalizeMarketData, getEnglishTeamName } from '../services/polymarket';
 import { analyzeMatch } from '../services/strategy';
 import { useSignals } from '../contexts/SignalContext';
 import { getTeamInjuries, getGameWinProbability, getESPNTeamName } from '../services/espn';
 import type { TeamInjuries, WinProbability } from '../types';
 import { TeamInfoModal } from './TeamInfoModal';
-import { analyzeMarketDepth, analyzeTradingMomentum } from '../services/marketDepth';
 import type { PriceData } from '../services/strategy';
 
 interface MatchCardProps {
@@ -51,7 +50,6 @@ export function MatchCard({ match }: MatchCardProps) {
   const [awayInjuries, setAwayInjuries] = useState<TeamInjuries | null>(null);
   const [winProb, setWinProb] = useState<WinProbability | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [tokenIds, setTokenIds] = useState<string[]>([]);
   
   // 从 localStorage 恢复赛前胜率缓存（持久化）
   const getCachedPregameProb = (): number | null => {
@@ -109,27 +107,19 @@ export function MatchCard({ match }: MatchCardProps) {
 
       const market = await searchPolymarketMatch(homeTeamName, awayTeamName, forceRefresh);
       
+      if (!market) {
+        console.warn(`⚠️ 无法获取价格: ${homeTeamName} vs ${awayTeamName}`);
+        console.warn(`   可能原因:`);
+        console.warn(`   1. Polymarket上没有这场比赛的市场`);
+        console.warn(`   2. 队伍名称翻译不匹配 (中文: ${homeTeamName}, ${awayTeamName})`);
+        console.warn(`   3. 只有盘口/大小分市场，没有胜负盘`);
+        return;
+      }
+      
       if (mounted && market) {
         const homeEn = getEnglishTeamName(homeTeamName);
         const awayEn = getEnglishTeamName(awayTeamName);
         const { homePrice, awayPrice, homeRawPrice, awayRawPrice } = normalizeMarketData(market, homeEn, awayEn);
-        
-        // Extract token IDs for WebSocket subscription
-        let extractedTokenIds: string[] = [];
-        if (market.clobTokenIds) {
-          try {
-            if (typeof market.clobTokenIds === 'string') {
-              extractedTokenIds = JSON.parse(market.clobTokenIds);
-            } else if (Array.isArray(market.clobTokenIds)) {
-              extractedTokenIds = market.clobTokenIds;
-            }
-            if (extractedTokenIds.length > 0 && JSON.stringify(extractedTokenIds) !== JSON.stringify(tokenIds)) {
-              setTokenIds(extractedTokenIds);
-            }
-          } catch (e) {
-            // Ignore parsing errors
-          }
-        }
         
         // 检查价格是否变化（避免重复更新）
         const pricesChanged = !lastPricesRef.current || 
@@ -143,36 +133,6 @@ export function MatchCard({ match }: MatchCardProps) {
         
         // 更新价格缓存
         lastPricesRef.current = { home: homeRawPrice.toString(), away: awayRawPrice.toString() };
-        
-        // 获取市场深度数据（NBA专用）
-        let marketDepthData = null;
-        let tradingMomentumData = null;
-        
-        if (extractedTokenIds.length > 0 && market.id) {
-          try {
-            // 使用主队token ID获取市场深度
-            const homeTokenId = extractedTokenIds[0];
-            
-            // 并行获取深度和动量数据
-            const [depth, momentum] = await Promise.all([
-              analyzeMarketDepth(homeTokenId),
-              analyzeTradingMomentum(market.id, 60)
-            ]);
-            
-            marketDepthData = depth;
-            tradingMomentumData = momentum;
-            
-            if (depth) {
-              console.log(`[Market Depth] ${homeEn} vs ${awayEn}:`, {
-                spread: (depth.spread * 100).toFixed(2) + '%',
-                liquidity: depth.liquidity,
-                confidence: (depth.confidence * 100).toFixed(0) + '%'
-              });
-            }
-          } catch (error) {
-            console.warn('[Market Depth] Failed to fetch depth data:', error);
-          }
-        }
         
         let type: 'bullish' | 'bearish' | 'neutral' = 'neutral';
         if (homeRawPrice >= 0.60) type = 'bullish';
@@ -201,17 +161,7 @@ export function MatchCard({ match }: MatchCardProps) {
             homeRawPrice,
             awayRawPrice,
             espnHomeWinProb: winProb?.homeWinPercentage, // 实时胜率
-            espnPregameHomeWinProb: winProb?.pregameHomeWinPercentage, // 赛前胜率（用于判断强队）
-            marketDepth: marketDepthData ? {
-              spread: marketDepthData.spread,
-              liquidity: marketDepthData.liquidity,
-              depthImbalance: marketDepthData.depthImbalance,
-              confidence: marketDepthData.confidence
-            } : undefined,
-            tradingMomentum: tradingMomentumData ? {
-              buyPressure: tradingMomentumData.buyPressure,
-              momentum: tradingMomentumData.momentum
-            } : undefined
+            espnPregameHomeWinProb: winProb?.pregameHomeWinPercentage // 赛前胜率（用于判断强队）
           };
           
           const signals = analyzeMatch(match, priceData);
@@ -262,8 +212,9 @@ export function MatchCard({ match }: MatchCardProps) {
     // 初始加载（添加随机延迟，避免所有组件同时发起请求）
     const isLive = matchStatus !== 'COMPLETED' && matchStatus !== 'NOTSTARTED' && matchStatus !== 'SCHEDULED';
     
-    // 随机延迟0-5秒，避免所有MatchCard同时请求导致 ERR_INSUFFICIENT_RESOURCES
-    const initialDelay = Math.random() * 5000;
+    // 随机延迟0-15秒，避免所有MatchCard同时请求导致 ERR_INSUFFICIENT_RESOURCES
+    // 增加延迟范围，确保请求更加分散
+    const initialDelay = Math.random() * 15000;
     
     const initialTimeout = setTimeout(() => {
       fetchPolyData(isLive); // 比赛进行中强制刷新以获取最新价格
@@ -276,19 +227,24 @@ export function MatchCard({ match }: MatchCardProps) {
     }
 
     // REST API轮询模式（WebSocket禁用时的主要更新方式）
-    // - 比赛进行中：30秒更新一次（降低频率，避免资源耗尽）
+    // - 比赛进行中：45秒更新一次（增加间隔，降低请求频率）
     // - 比赛未开始：120秒更新一次
-    const pollInterval = isLive ? 30000 : 120000;
+    const pollInterval = isLive ? 45000 : 120000;
     
-    // 轮询也添加初始随机延迟
+    // 轮询也添加独立的随机延迟（与初始延迟不同）
+    const pollDelay = initialDelay + (Math.random() * 10000); // 额外加 0-10秒
     const pollTimeout = setTimeout(() => {
       intervalRef.current = setInterval(() => {
         if (matchStatus !== 'COMPLETED') {
-          fetchPolyData(true);
-          fetchWinProb(); // 同时更新胜率
+          // 每次轮询时再加一个小的随机延迟，避免多个组件同步
+          const jitter = Math.random() * 3000; // 0-3秒的抖动
+          setTimeout(() => {
+            fetchPolyData(true);
+            fetchWinProb(); // 同时更新胜率
+          }, jitter);
         }
       }, pollInterval);
-    }, initialDelay);
+    }, pollDelay);
 
     return () => {
       mounted = false;
@@ -300,109 +256,7 @@ export function MatchCard({ match }: MatchCardProps) {
     };
   }, [homeTeamName, awayTeamName, matchStatus, updateSignals, match]);
 
-  // Subscribe to WebSocket real-time price updates
-  useEffect(() => {
-    // 环境变量开关：可以禁用WebSocket，只使用REST API轮询
-    const ENABLE_WEBSOCKET = import.meta.env.VITE_ENABLE_WEBSOCKET !== 'false';
-    
-    if (!ENABLE_WEBSOCKET) {
-      console.log('[WebSocket] Disabled by env variable, using REST API polling only');
-      return;
-    }
-    
-    if (tokenIds.length === 0 || matchStatus === 'COMPLETED') {
-      return;
-    }
-
-    console.log(`[WebSocket] Subscribing to token IDs:`, tokenIds);
-    
-    const unsubscribe = subscribeToRealtimePrices(tokenIds, async (tokenId, price) => {
-      console.log(`[WebSocket] 💰 Price update for token ${tokenId}: ${price}`);
-      
-      // Immediately re-fetch market data to get updated prices and trigger signal recalculation
-      const market = await searchPolymarketMatch(homeTeamName, awayTeamName, false);
-      
-      if (market) {
-        const homeEn = getEnglishTeamName(homeTeamName);
-        const awayEn = getEnglishTeamName(awayTeamName);
-        const { homePrice, awayPrice, homeRawPrice, awayRawPrice } = normalizeMarketData(market, homeEn, awayEn);
-        
-        // Check if prices actually changed
-        const pricesChanged = !lastPricesRef.current || 
-          lastPricesRef.current.home !== homeRawPrice.toString() || 
-          lastPricesRef.current.away !== awayRawPrice.toString();
-        
-        if (pricesChanged) {
-          lastPricesRef.current = { home: homeRawPrice.toString(), away: awayRawPrice.toString() };
-          
-          // 获取市场深度数据（实时更新）
-          let marketDepthData = null;
-          let tradingMomentumData = null;
-          
-          if (tokenIds.length > 0 && market.id) {
-            try {
-              const homeTokenId = tokenIds[0];
-              const [depth, momentum] = await Promise.all([
-                analyzeMarketDepth(homeTokenId),
-                analyzeTradingMomentum(market.id, 60)
-              ]);
-              
-              marketDepthData = depth;
-              tradingMomentumData = momentum;
-            } catch (error) {
-              console.warn('[WebSocket] Failed to fetch depth data:', error);
-            }
-          }
-          
-          let type: 'bullish' | 'bearish' | 'neutral' = 'neutral';
-          if (homeRawPrice >= 0.60) type = 'bullish';
-          else if (homeRawPrice <= 0.40) type = 'bearish';
-          
-          console.log(`[WebSocket] ✓ Updating prices: ${homePrice}¢ / ${awayPrice}¢`);
-          
-          setPolyData({
-            homePrice,
-            awayPrice,
-            homeRawPrice,
-            awayRawPrice,
-            type,
-            loaded: true,
-            lastUpdate: Date.now()
-          });
-          
-          // 实时重新计算信号（包含市场深度和赛前胜率）
-          if (matchStatus !== 'COMPLETED' && matchStatus !== 'NOTSTARTED') {
-            const priceData: PriceData = {
-              homePrice,
-              awayPrice,
-              homeRawPrice,
-              awayRawPrice,
-              espnHomeWinProb: winProb?.homeWinPercentage, // 实时胜率
-              espnPregameHomeWinProb: winProb?.pregameHomeWinPercentage, // 赛前胜率（用于判断强队）
-              marketDepth: marketDepthData ? {
-                spread: marketDepthData.spread,
-                liquidity: marketDepthData.liquidity,
-                depthImbalance: marketDepthData.depthImbalance,
-                confidence: marketDepthData.confidence
-              } : undefined,
-              tradingMomentum: tradingMomentumData ? {
-                buyPressure: tradingMomentumData.buyPressure,
-                momentum: tradingMomentumData.momentum
-              } : undefined
-            };
-            
-            const signals = analyzeMatch(match, priceData);
-            updateSignals(match.matchId, signals);
-          }
-        }
-      }
-    });
-
-    return () => {
-      console.log(`[WebSocket] Unsubscribing from token IDs:`, tokenIds);
-      unsubscribe();
-    };
-  }, [tokenIds, matchStatus, homeTeamName, awayTeamName, match, updateSignals, winProb]);
+  // WebSocket已移除，仅使用REST API轮询
 
   // 当比分更新时，重新计算信号
   useEffect(() => {

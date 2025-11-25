@@ -1,4 +1,5 @@
 import type { ESPNGame, H2HGame, TeamInjuries, PlayerInjury, WinProbability } from '../types';
+import { queuedFetch } from './requestQueue';
 
 const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports';
 
@@ -56,7 +57,7 @@ function formatDate(date: Date): string {
 export async function fetchNBAGamesByDate(dateStr: string): Promise<ESPNGame[]> {
   try {
     const url = `${ESPN_BASE}/basketball/nba/scoreboard?dates=${dateStr}`;
-    const response = await fetch(url);
+    const response = await queuedFetch(url);
 
     if (!response.ok) {
       throw new Error(`ESPN API error: ${response.status}`);
@@ -264,7 +265,7 @@ export async function getTeamInjuries(teamName: string): Promise<TeamInjuries | 
 
     // ESPN injuries endpoint - returns all teams, we'll filter
     const url = `${ESPN_BASE}/basketball/nba/injuries`;
-    const response = await fetch(url);
+    const response = await queuedFetch(url);
 
     if (!response.ok) {
       throw new Error(`ESPN API error: ${response.status}`);
@@ -360,7 +361,7 @@ export async function getGameWinProbability(homeTeam: string, awayTeam: string):
   try {
     // Use scoreboard API without date to get current games
     const url = `${ESPN_BASE}/basketball/nba/scoreboard`;
-    const response = await fetch(url);
+    const response = await queuedFetch(url);
 
     if (!response.ok) {
       return null;
@@ -404,7 +405,7 @@ export async function getGameWinProbability(homeTeam: string, awayTeam: string):
 
     // Fetch game summary for win probability
     const summaryUrl = `${ESPN_BASE}/basketball/nba/summary?event=${gameId}`;
-    const summaryRes = await fetch(summaryUrl);
+    const summaryRes = await queuedFetch(summaryUrl);
 
     if (!summaryRes.ok) {
       return null;

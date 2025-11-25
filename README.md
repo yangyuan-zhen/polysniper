@@ -102,6 +102,7 @@ VITE_ENABLE_WEBSOCKET=true
 ## 📖 文档
 
 - [📚 DOCS_INDEX.md](./DOCS_INDEX.md) - **文档索引总览** ⭐
+- [🔧 TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - **故障排除指南** 🆕
 - [📝 CHANGELOG.md](./CHANGELOG.md) - **项目更新日志** 🆕
 - [📊 SIGNALS_GUIDE.md](./SIGNALS_GUIDE.md) - 交易信号详解
 - [📋 PRD.md](./PRD.md) - 产品需求文档

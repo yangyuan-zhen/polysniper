@@ -33,6 +33,29 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/clob/, ''),
         agent: agent,
+        timeout: 10000, // 10秒超时
+        configure: (proxy) => {
+          proxy.on('error', (err, _req, res) => {
+            console.log('[CLOB Proxy Error]:', err.message);
+            // 返回空响应而不是让请求挂起
+            if (res && typeof res !== 'object') return;
+            const response = res as any;
+            if (response.headersSent) return;
+            try {
+              response.writeHead(500, { 'Content-Type': 'application/json' });
+              response.end(JSON.stringify({ error: 'Proxy error', message: err.message }));
+            } catch (e) {
+              // 忽略写入失败
+            }
+          });
+          proxy.on('proxyReq', (proxyReq) => {
+            // 添加超时处理
+            proxyReq.setTimeout(10000, () => {
+              console.log('[CLOB Proxy] Request timeout');
+              proxyReq.destroy();
+            });
+          });
+        },
       },
       // WebSocket代理 - 已禁用，不需要
       // WebSocket协议不受CORS限制，前端代码直接连接 Polymarket

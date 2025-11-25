@@ -40,6 +40,15 @@
 
 ## 技术文档
 
+### 🔧 [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) 🆕
+**故障排除指南**
+- TLS连接错误解决方案
+- API请求超时处理
+- WebSocket连接失败排查
+- 虎扑API问题处理
+- 性能优化建议
+- **适合遇到错误的用户**
+
 ### 📡 [WEBSOCKET_STATUS.md](./WEBSOCKET_STATUS.md) ⭐
 **WebSocket实时价格更新实现状态**
 - WebSocket架构设计
@@ -86,6 +95,9 @@
 
 ### 我想了解产品功能需求
 → 阅读 [PRD.md](./PRD.md)
+
+### 遇到TLS连接错误或API超时
+→ 阅读 [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - 完整的故障排除指南
 
 ### WebSocket连接有问题
 → 阅读 [WEBSOCKET_STATUS.md](./WEBSOCKET_STATUS.md) 的"常见问题"部分
@@ -161,12 +173,14 @@ VITE_ENABLE_WEBSOCKET=true   # true=启用WebSocket, false=仅REST API
 
 ## 📅 文档更新日志
 
+- 2025-11-25: 创建 TROUBLESHOOTING.md - 故障排除指南（TLS错误、API超时）
+- 2025-11-25: 更新 CHANGELOG.md - v2.0.1版本记录（API重试机制、胜率过滤）
 - 2025-11-25: 创建 CHANGELOG.md - 项目版本更新日志
 - 2025-11-25: 创建 DOCS_INDEX.md - 文档索引总览
 - 2025-11-25: 创建 WEBSOCKET_STATUS.md - WebSocket实现状态文档
 - 2025-11-25: 更新 README.md - WebSocket直连、强队抄底策略
-- 2025-11-25: 更新 SIGNALS_GUIDE.md - 强队抄底详解、提示音禁用
-- 2025-11-25: 更新 PRD.md - WebSocket方案、赛前胜率缓存
+- 2025-11-25: 更新 SIGNALS_GUIDE.md - 强队抄底详解、胜率门槛、提示音禁用
+- 2025-11-25: 更新 PRD.md - WebSocket方案、赛前胜率缓存、胜率门槛
 
 ## ⚠️ 免责声明
 

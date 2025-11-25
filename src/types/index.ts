@@ -58,7 +58,9 @@ export interface TeamInjuries {
 
 // ESPN 胜率预测
 export interface WinProbability {
-  homeWinPercentage: number;
+  homeWinPercentage: number; // 当前胜率（实时或赛前）
   tiePercentage: number;
   playId?: string;
+  pregameHomeWinPercentage?: number; // 赛前预测胜率（用于判断强队）
+  isPregame?: boolean; // 是否为赛前数据
 }

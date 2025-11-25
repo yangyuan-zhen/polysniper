@@ -52,6 +52,36 @@ export function MatchCard({ match }: MatchCardProps) {
   const [winProb, setWinProb] = useState<WinProbability | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tokenIds, setTokenIds] = useState<string[]>([]);
+  
+  // 从 localStorage 恢复赛前胜率缓存（持久化）
+  const getCachedPregameProb = (): number | null => {
+    try {
+      const key = `pregame_${homeTeamName}_${awayTeamName}`;
+      const cached = localStorage.getItem(key);
+      return cached ? parseFloat(cached) : null;
+    } catch {
+      return null;
+    }
+  };
+  
+  const setCachedPregameProb = (value: number) => {
+    try {
+      const key = `pregame_${homeTeamName}_${awayTeamName}`;
+      localStorage.setItem(key, value.toString());
+      console.log(`💾 Saved pregame to localStorage: ${(value * 100).toFixed(1)}%`);
+    } catch (error) {
+      console.warn('Failed to save to localStorage:', error);
+    }
+  };
+  
+  const pregameWinProbRef = useRef<number | null>(getCachedPregameProb()); // 从缓存恢复
+  
+  // 初始化时输出缓存恢复日志
+  useEffect(() => {
+    if (pregameWinProbRef.current !== null) {
+      console.log(`🔄 Restored pregame from localStorage: ${homeTeamName} vs ${awayTeamName} = ${(pregameWinProbRef.current * 100).toFixed(1)}%`);
+    }
+  }, []); // 只运行一次
 
   // Handle card click to open modal
   const handleCardClick = async () => {
@@ -164,13 +194,14 @@ export function MatchCard({ match }: MatchCardProps) {
         if (matchStatus === 'COMPLETED') {
           updateSignals(match.matchId, []);
         } else {
-          // 构建完整的PriceData，包含市场深度信息
+          // 构建完整的PriceData，包含市场深度信息和赛前胜率
           const priceData: PriceData = {
             homePrice,
             awayPrice,
             homeRawPrice,
             awayRawPrice,
-            espnHomeWinProb: winProb?.homeWinPercentage,
+            espnHomeWinProb: winProb?.homeWinPercentage, // 实时胜率
+            espnPregameHomeWinProb: winProb?.pregameHomeWinPercentage, // 赛前胜率（用于判断强队）
             marketDepth: marketDepthData ? {
               spread: marketDepthData.spread,
               liquidity: marketDepthData.liquidity,
@@ -203,7 +234,28 @@ export function MatchCard({ match }: MatchCardProps) {
       
       if (mounted && prob) {
         console.log(`✅ Got win prob: Home ${(prob.homeWinPercentage * 100).toFixed(1)}%`);
-        setWinProb(prob);
+        console.log(`   isPregame: ${prob.isPregame}, pregameHomeWinPercentage: ${prob.pregameHomeWinPercentage}`);
+        
+        // 缓存赛前胜率（只要ESPN返回了就更新缓存，并持久化到 localStorage）
+        if (prob.pregameHomeWinPercentage !== undefined) {
+          // 只在值发生变化时才更新
+          if (pregameWinProbRef.current !== prob.pregameHomeWinPercentage) {
+            pregameWinProbRef.current = prob.pregameHomeWinPercentage;
+            setCachedPregameProb(prob.pregameHomeWinPercentage); // 持久化
+            console.log(`💾 Cached pregame win prob: ${(prob.pregameHomeWinPercentage * 100).toFixed(1)}%`);
+          }
+        }
+        
+        // 如果当前返回的数据没有赛前胜率，但我们之前缓存过，就使用缓存的
+        const finalProb: WinProbability = {
+          ...prob,
+          pregameHomeWinPercentage: prob.pregameHomeWinPercentage ?? pregameWinProbRef.current ?? undefined
+        };
+        
+        console.log(`   Final pregameHomeWinPercentage: ${finalProb.pregameHomeWinPercentage}`);
+        console.log(`   Cache value: ${pregameWinProbRef.current}`);
+        
+        setWinProb(finalProb);
       }
     };
 
@@ -298,14 +350,15 @@ export function MatchCard({ match }: MatchCardProps) {
             lastUpdate: Date.now()
           });
           
-          // 实时重新计算信号（包含市场深度）
+          // 实时重新计算信号（包含市场深度和赛前胜率）
           if (matchStatus !== 'COMPLETED' && matchStatus !== 'NOTSTARTED') {
             const priceData: PriceData = {
               homePrice,
               awayPrice,
               homeRawPrice,
               awayRawPrice,
-              espnHomeWinProb: winProb?.homeWinPercentage,
+              espnHomeWinProb: winProb?.homeWinPercentage, // 实时胜率
+              espnPregameHomeWinProb: winProb?.pregameHomeWinPercentage, // 赛前胜率（用于判断强队）
               marketDepth: marketDepthData ? {
                 spread: marketDepthData.spread,
                 liquidity: marketDepthData.liquidity,
@@ -338,7 +391,7 @@ export function MatchCard({ match }: MatchCardProps) {
         // 比赛结束，立即清除信号
         updateSignals(match.matchId, []);
       } else if (matchStatus !== 'NOTSTARTED') {
-        // 比赛进行中，计算信号
+        // 比赛进行中，计算信号（包含赛前胜率）
         const signals = analyzeMatch(
           match,
           { 
@@ -346,7 +399,8 @@ export function MatchCard({ match }: MatchCardProps) {
             awayPrice: polyData.awayPrice, 
             homeRawPrice: polyData.homeRawPrice, 
             awayRawPrice: polyData.awayRawPrice,
-            espnHomeWinProb: winProb?.homeWinPercentage // 传递ESPN胜率
+            espnHomeWinProb: winProb?.homeWinPercentage, // 传递ESPN实时胜率
+            espnPregameHomeWinProb: winProb?.pregameHomeWinPercentage // 传递ESPN赛前胜率（用于判断强队）
           }
         );
         updateSignals(match.matchId, signals);
@@ -494,7 +548,9 @@ export function MatchCard({ match }: MatchCardProps) {
       {/* ESPN Win Probability Bar */}
       {winProb && matchStatus !== 'COMPLETED' && (
         <div className="mb-4 bg-white/5 rounded-lg p-3">
-          <div className="text-[10px] text-gray-500 text-center mb-2">ESPN 胜率预测</div>
+          <div className="text-[10px] text-gray-500 text-center mb-2">
+            ESPN 胜率 {winProb.isPregame ? '(赛前预测)' : '(实时)'}
+          </div>
           <div className="flex items-center gap-2">
             {/* 左边：客队 */}
             <div className="text-xs font-mono text-blue-400 w-12 text-right">
@@ -517,6 +573,18 @@ export function MatchCard({ match }: MatchCardProps) {
               {(winProb.homeWinPercentage * 100).toFixed(0)}%
             </div>
           </div>
+          
+          {/* 赛前预测（比赛进行中时始终显示作为参考） */}
+          {winProb.pregameHomeWinPercentage !== undefined && matchStatus !== 'NOTSTARTED' && matchStatus !== 'SCHEDULED' && (
+            <div className="mt-2 pt-2 border-t border-gray-700/50">
+              <div className="text-[9px] text-gray-500 text-center mb-1">赛前预测（用于判断强队）</div>
+              <div className="flex justify-between items-center text-[10px] font-mono">
+                <span className="text-blue-300">{awayTeamName} {((1 - winProb.pregameHomeWinPercentage) * 100).toFixed(0)}%</span>
+                <span className="text-gray-600">vs</span>
+                <span className="text-red-300">{homeTeamName} {(winProb.pregameHomeWinPercentage * 100).toFixed(0)}%</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

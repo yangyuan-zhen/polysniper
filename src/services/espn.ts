@@ -353,7 +353,7 @@ function calculateImpliedProbability(moneyline: number): number {
 
 /**
  * 获取比赛胜率预测
- * - 比赛进行中：返回实时胜率（ESPN live win probability）
+ * - 比赛进行中：返回实时胜率 + 赛前预测胜率（基于赔率）
  * - 比赛未开始：返回赛前预测胜率（基于赔率计算）
  */
 export async function getGameWinProbability(homeTeam: string, awayTeam: string): Promise<WinProbability | null> {
@@ -392,6 +392,16 @@ export async function getGameWinProbability(homeTeam: string, awayTeam: string):
     const gameId = game.id;
     console.log(`✅ Found game ID: ${gameId} for ${homeTeam} vs ${awayTeam}`);
 
+    // 首先尝试从赔率获取赛前预测（作为判断强队的基准）
+    const odds = game.competitions?.[0]?.odds?.[0];
+    let pregameHomeWinPercentage: number | undefined;
+    
+    if (odds && odds.homeTeamOdds?.moneyLine) {
+      const homeML = odds.homeTeamOdds.moneyLine;
+      pregameHomeWinPercentage = calculateImpliedProbability(homeML);
+      console.log(`📊 Pregame win probability (from odds ${homeML}): Home ${(pregameHomeWinPercentage * 100).toFixed(1)}%`);
+    }
+
     // Fetch game summary for win probability
     const summaryUrl = `${ESPN_BASE}/basketball/nba/summary?event=${gameId}`;
     const summaryRes = await fetch(summaryUrl);
@@ -403,7 +413,7 @@ export async function getGameWinProbability(homeTeam: string, awayTeam: string):
     const summaryData = await summaryRes.json();
     const winProbArray = summaryData.winprobability;
 
-    // 如果有实时胜率数据（比赛进行中），使用实时数据
+    // 如果有实时胜率数据（比赛进行中），使用实时数据 + 赛前数据
     if (winProbArray && winProbArray.length > 0) {
       const latest = winProbArray[winProbArray.length - 1];
       console.log(`📊 Live win probability: Home ${(latest.homeWinPercentage * 100).toFixed(1)}%`);
@@ -412,23 +422,19 @@ export async function getGameWinProbability(homeTeam: string, awayTeam: string):
         homeWinPercentage: latest.homeWinPercentage || 0.5,
         tiePercentage: latest.tiePercentage || 0,
         playId: latest.playId,
+        pregameHomeWinPercentage, // 保留赛前预测
+        isPregame: false,
       };
     }
 
-    // 没有实时数据，尝试从赔率计算赛前预测
-    console.log(`ℹ️ No live win probability, trying pregame odds for game ${gameId}`);
-    const odds = game.competitions?.[0]?.odds?.[0];
-    
-    if (odds && odds.homeTeamOdds?.moneyLine) {
-      const homeML = odds.homeTeamOdds.moneyLine;
-      const homeWinPercentage = calculateImpliedProbability(homeML);
-      
-      console.log(`📊 Pregame win probability (from odds ${homeML}): Home ${(homeWinPercentage * 100).toFixed(1)}%`);
-      
+    // 没有实时数据（比赛未开始），使用赛前预测
+    if (pregameHomeWinPercentage !== undefined) {
       return {
-        homeWinPercentage,
+        homeWinPercentage: pregameHomeWinPercentage,
         tiePercentage: 0,
         playId: 'pregame',
+        pregameHomeWinPercentage,
+        isPregame: true,
       };
     }
 

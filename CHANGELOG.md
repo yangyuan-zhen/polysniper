@@ -4,6 +4,28 @@
 
 ### 🐛 Bug修复
 
+#### API请求超时和TLS连接错误修复
+- ✅ **添加重试机制** - 所有API请求支持最多2次重试
+  - `marketDepth.ts`: fetchOrderBook, fetchSpread, fetchRecentTrades
+  - `api.ts`: fetchDailyMatches（虎扑API）
+  - `polymarket.ts`: fetchClobPrice（优化超时和重试）
+- ✅ **超时控制** - 添加AbortController超时控制
+  - 虎扑API: 8秒超时（较慢）
+  - Polymarket CLOB API: 5秒超时
+  - 市场深度API: 5秒超时
+- ✅ **指数退避** - 重试间隔递增（500ms, 1000ms, 1500ms）
+- ✅ **更好的错误日志** - 区分超时和网络错误，显示重试次数
+- ✅ **Vite代理错误处理** - 添加CLOB代理的超时和错误处理配置
+
+**问题背景**：
+用户遇到大量 `Client network socket disconnected before secure TLS connection was established` 错误。这是由于网络不稳定或Clash代理问题导致TLS连接失败。
+
+**解决方案**：
+1. 为所有API请求添加超时控制和重试机制
+2. 优化Vite代理配置，添加超时和错误处理
+3. 请求失败时自动重试，避免页面卡死
+4. 使用指数退避策略避免过度重试
+
 #### 胜率过滤优化
 - ✅ **添加买入信号胜率门槛** - 避免推荐弱队买入
   - 强买入：要求赛前胜率 ≥ 50% 或 实时胜率 ≥ 45%

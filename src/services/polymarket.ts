@@ -63,10 +63,12 @@ export const getEnglishTeamName = (chineseName: string): string => {
  * This is only used when WebSocket prices are unavailable
  */
 const fetchClobPrice = async (tokenId: string, retries = 2): Promise<string | null> => {
+  const timeout = 5000; // 增加到5秒超时
+  
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
       
       const response = await fetch(`/api/clob/price?token_id=${tokenId}&side=sell`, {
         signal: controller.signal
@@ -80,11 +82,19 @@ const fetchClobPrice = async (tokenId: string, retries = 2): Promise<string | nu
       
       const data = await response.json();
       return data.price;
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.warn(`[Polymarket] CLOB price request timeout (attempt ${attempt + 1}/${retries + 1})`);
+      } else {
+        console.warn(`[Polymarket] Error fetching CLOB price (attempt ${attempt + 1}/${retries + 1}):`, error.message);
+      }
+      
       if (attempt === retries) {
         return null;
       }
-      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // 指数退避：500ms, 1000ms, 1500ms
+      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
     }
   }
   return null;

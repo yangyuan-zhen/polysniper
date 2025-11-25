@@ -51,60 +51,143 @@ interface TradingMomentum {
 
 /**
  * Fetch order book for a specific token
+ * 添加重试机制和超时处理
  */
 export async function fetchOrderBook(tokenId: string): Promise<OrderBookData | null> {
-  try {
-    const response = await fetch(`/api/clob/book?token_id=${tokenId}`);
-    if (!response.ok) return null;
-    
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('[Market Depth] Error fetching order book:', error);
-    return null;
+  const maxRetries = 2;
+  const timeout = 5000; // 5秒超时
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      const response = await fetch(`/api/clob/book?token_id=${tokenId}`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        if (attempt < maxRetries) continue; // 重试
+        return null;
+      }
+      
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.warn(`[Market Depth] Order book request timeout (attempt ${attempt + 1}/${maxRetries + 1})`);
+      } else {
+        console.warn(`[Market Depth] Error fetching order book (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
+      }
+      
+      if (attempt === maxRetries) {
+        return null; // 所有重试都失败
+      }
+      
+      // 等待后重试
+      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+    }
   }
+  
+  return null;
 }
 
 /**
  * Fetch spread for a specific token
+ * 添加重试机制和超时处理
  */
 export async function fetchSpread(tokenId: string): Promise<number | null> {
-  try {
-    const response = await fetch(`/api/clob/spread?token_id=${tokenId}`);
-    if (!response.ok) return null;
-    
-    const data: SpreadData = await response.json();
-    return parseFloat(data.spread);
-  } catch (error) {
-    console.error('[Market Depth] Error fetching spread:', error);
-    return null;
+  const maxRetries = 2;
+  const timeout = 5000; // 5秒超时
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      const response = await fetch(`/api/clob/spread?token_id=${tokenId}`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        if (attempt < maxRetries) continue; // 重试
+        return null;
+      }
+      
+      const data: SpreadData = await response.json();
+      return parseFloat(data.spread);
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.warn(`[Market Depth] Spread request timeout (attempt ${attempt + 1}/${maxRetries + 1})`);
+      } else {
+        console.warn(`[Market Depth] Error fetching spread (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
+      }
+      
+      if (attempt === maxRetries) {
+        return null; // 所有重试都失败，返回null
+      }
+      
+      // 等待后重试
+      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+    }
   }
+  
+  return null;
 }
 
 /**
  * Fetch recent trades for market analysis
+ * 添加重试机制和超时处理
  */
 export async function fetchRecentTrades(
   conditionId: string, 
   limit: number = 100
 ): Promise<TradeData[]> {
-  try {
-    const response = await fetch(
-      `/api/polymarket/trades?market=${conditionId}&limit=${limit}`
-    );
-    if (!response.ok) return [];
-    
-    const trades = await response.json();
-    return trades.map((t: any) => ({
-      side: t.side as 'BUY' | 'SELL',
-      size: t.size,
-      price: t.price,
-      timestamp: t.timestamp
-    }));
-  } catch (error) {
-    console.error('[Market Depth] Error fetching trades:', error);
-    return [];
+  const maxRetries = 2;
+  const timeout = 5000; // 5秒超时
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      const response = await fetch(
+        `/api/polymarket/trades?market=${conditionId}&limit=${limit}`,
+        { signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        if (attempt < maxRetries) continue; // 重试
+        return [];
+      }
+      
+      const trades = await response.json();
+      return trades.map((t: any) => ({
+        side: t.side as 'BUY' | 'SELL',
+        size: t.size,
+        price: t.price,
+        timestamp: t.timestamp
+      }));
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.warn(`[Market Depth] Trades request timeout (attempt ${attempt + 1}/${maxRetries + 1})`);
+      } else {
+        console.warn(`[Market Depth] Error fetching trades (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
+      }
+      
+      if (attempt === maxRetries) {
+        return []; // 所有重试都失败
+      }
+      
+      // 等待后重试
+      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+    }
   }
+  
+  return [];
 }
 
 /**

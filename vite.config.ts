@@ -34,6 +34,9 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api\/clob/, ''),
         agent: agent,
       },
+      // WebSocket代理 - 已禁用，不需要
+      // WebSocket协议不受CORS限制，前端代码直接连接 Polymarket
+      // wss://ws-subscriptions-clob.polymarket.com/ws/market
     },
   },
 })

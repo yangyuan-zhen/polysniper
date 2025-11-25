@@ -64,10 +64,11 @@ function App() {
     // 初始加载
     loadMatches();
 
-    // 每 10 秒自动刷新比赛数据（更快的比分更新）
+    // 每 30 秒自动刷新比赛列表（降低频率，避免资源耗尽）
+    // 具体比赛数据由各个MatchCard组件独立轮询
     const interval = setInterval(() => {
       loadMatches();
-    }, 10000); // 10 seconds
+    }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
   }, []);

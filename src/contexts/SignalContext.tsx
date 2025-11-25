@@ -8,24 +8,8 @@ interface SignalContextType {
   updateSignals: (matchId: string, signals: TradingSignal[]) => void;
 }
 
-// 创建提示音
-const createBeep = (frequency: number, duration: number, volume: number = 0.3) => {
-  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-  const oscillator = audioContext.createOscillator();
-  const gainNode = audioContext.createGain();
-  
-  oscillator.connect(gainNode);
-  gainNode.connect(audioContext.destination);
-  
-  oscillator.frequency.value = frequency;
-  oscillator.type = 'sine';
-  
-  gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
-  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
-  
-  oscillator.start(audioContext.currentTime);
-  oscillator.stop(audioContext.currentTime + duration);
-};
+// 提示音功能已禁用（太吵）
+// const createBeep = (frequency: number, duration: number, volume: number = 0.3) => { ... }
 
 const SignalContext = createContext<SignalContextType | undefined>(undefined);
 
@@ -71,7 +55,7 @@ export function SignalProvider({ children }: { children: ReactNode }) {
       })
     : null;
 
-  // 检测新的强信号并播放提示音
+  // 检测新的强信号（提示音已禁用）
   useEffect(() => {
     if (!topSignal) {
       previousTopSignalRef.current = null;
@@ -89,20 +73,20 @@ export function SignalProvider({ children }: { children: ReactNode }) {
        previous.type !== topSignal.type);
 
     if (isNewStrongSignal) {
-      // 播放提示音
-      try {
-        if (topSignal.type === 'STRONG_BUY') {
-          // 买入信号：双音（叮叮）
-          createBeep(800, 0.15);
-          setTimeout(() => createBeep(800, 0.15), 150);
-        } else {
-          // 卖出信号：单音（叮）
-          createBeep(600, 0.2);
-        }
-        console.log(`🔔 ${topSignal.type === 'STRONG_BUY' ? '强买入' : '强卖出'}信号: ${topSignal.team}`);
-      } catch (e) {
-        // 静默失败（浏览器可能不支持 AudioContext）
-      }
+      // 提示音已禁用，只打印日志
+      console.log(`🔔 ${topSignal.type === 'STRONG_BUY' ? '强买入' : '强卖出'}信号: ${topSignal.team}`);
+      
+      // 原提示音代码（已禁用）
+      // try {
+      //   if (topSignal.type === 'STRONG_BUY') {
+      //     createBeep(800, 0.15);
+      //     setTimeout(() => createBeep(800, 0.15), 150);
+      //   } else {
+      //     createBeep(600, 0.2);
+      //   }
+      // } catch (e) {
+      //   // 静默失败
+      // }
     }
 
     previousTopSignalRef.current = topSignal;

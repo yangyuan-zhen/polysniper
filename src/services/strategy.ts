@@ -239,7 +239,13 @@ function analyzeTeam(
   }
 
   // === 强买入信号 (三个条件全部满足) ===
-  if (inPriceZone && scoreDiffInRange && inTimeZone) {
+  // 🚫 胜率过滤：必须有胜率支持，避免盲目买入弱队
+  const hasWinProbSupport = (
+    (espnPregameWinProb !== undefined && espnPregameWinProb >= 0.50) || // 赛前胜率 >= 50%
+    (espnWinProb !== undefined && espnWinProb >= 0.45) // 或实时胜率 >= 45%
+  );
+  
+  if (inPriceZone && scoreDiffInRange && inTimeZone && hasWinProbSupport) {
     // 根据ESPN胜率调整置信度
     let baseConfidence = calculateConfidence(price, scoreDiff, quarter, espnWinProb);
     const espnBonus = hasPriceEdge ? 15 : (priceDeviation > 0.05 ? 8 : 0); // ESPN支持加分
@@ -299,7 +305,13 @@ function analyzeTeam(
   }
 
   // === 普通买入信号 (满足2个条件) ===
-  if ((inPriceZone && scoreDiffInRange) || (inPriceZone && inTimeZone)) {
+  // 🚫 胜率过滤：降低门槛，但仍需要基本胜率支持
+  const hasBasicWinProbSupport = (
+    (espnPregameWinProb !== undefined && espnPregameWinProb >= 0.45) || // 赛前胜率 >= 45%
+    (espnWinProb !== undefined && espnWinProb >= 0.40) // 或实时胜率 >= 40%
+  );
+  
+  if (((inPriceZone && scoreDiffInRange) || (inPriceZone && inTimeZone)) && hasBasicWinProbSupport) {
     const baseConfidence = calculateConfidence(price, scoreDiff, quarter) - 20;
     const finalConfidence = Math.min(85, Math.max(20, baseConfidence));
     

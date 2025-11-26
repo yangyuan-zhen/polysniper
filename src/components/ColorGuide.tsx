@@ -204,19 +204,11 @@ export function ColorGuide() {
                 <p className="pt-2 border-t border-orange-500/20 text-gray-400">
                   <span className="font-semibold text-orange-400">建议：</span>
                   优先选择<span className="text-green-400">勇士、凯尔特人、雷霆</span>等强队的信号，
-                  避开<span className="text-red-400">黄蜂、奇才、活塞</span>等弱队。
+                  避开<span className="text-red-400">黄蜂、奇才、步行者</span>等弱队。
                 </p>
               </div>
             </div>
           </div>
-        </div>
-
-        {/* 提示 */}
-        <div className="mt-4 pt-4 border-t border-white/5">
-          <p className="text-xs text-gray-500">
-            💡 <span className="font-semibold">提示：</span>卡片颜色仅表示价格高低，不是交易建议。
-            真正的交易信号请看<span className="text-purple-400">策略信号卡</span>和听🔔提示音。
-          </p>
         </div>
       </div>
     </div>

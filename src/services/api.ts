@@ -51,7 +51,7 @@ export const fetchDailyMatches = async (): Promise<Match[]> => {
       
       if (!response.ok) {
         if (attempt < maxRetries) continue; // 重试
-        throw new Error('Network response was not ok');
+        throw new Error('虎扑API返回错误');
       }
       
       const data: ApiResponse = await response.json();

@@ -3,7 +3,7 @@
 ## 🔥 快速链接
 
 - **[价格获取失败调试](./DEBUG_PRICES.md)** - 为什么有些比赛拿不到价格？
-- **[故障排除指南](./TROUBLESHOOTING.md)** - TLS错误、API超时、WebSocket问题
+- **[故障排除指南](./TROUBLESHOOTING.md)** - TLS错误、API超时问题
 - **[信号策略说明](./SIGNALS_GUIDE.md)** - 理解买入/卖出信号
 
 ---
@@ -12,8 +12,7 @@
 
 ### [CHANGELOG.md](./CHANGELOG.md) 
 **项目更新日志**
-- v2.0.0版本重大更新
-- WebSocket实时价格推送
+- 版本重大更新记录
 - 强队抄底策略
 - 性能优化记录
 - 未来版本计划
@@ -31,7 +30,7 @@
 **产品需求文档 (Product Requirements Document)**
 - 产品定位与目标用户
 - 核心功能需求详解
-- WebSocket实时更新方案
+- REST API 价格更新方案
 - 强队抄底策略说明
 - ESPN胜率预测应用
 - **适合产品经理和开发者**
@@ -52,46 +51,15 @@
 **故障排除指南**
 - TLS连接错误解决方案
 - API请求超时处理
-- WebSocket连接失败排查
 - 虎扑API问题处理
 - 性能优化建议
 - **适合遇到错误的用户**
 
-### 📡 [WEBSOCKET_STATUS.md](./WEBSOCKET_STATUS.md) ⭐
-**WebSocket实时价格更新实现状态**
-- WebSocket架构设计
-- 浏览器直连实现方案
-- 订阅消息格式详解
-- PING心跳机制
-- 配置说明与环境变量
-- 性能对比分析
-- 常见问题与解决方案
-- **适合技术人员和问题排查**
-
-### 🔌 [WEBSOCKET_INTEGRATION.md](./WEBSOCKET_INTEGRATION.md)
-**WebSocket集成文档（历史参考）**
-- 早期WebSocket集成方案
-- 技术实现细节
-- **仅供历史参考**
-
-### 📝 [CHANGELOG_WEBSOCKET_V2.md](./CHANGELOG_WEBSOCKET_V2.md)
-**WebSocket V2版本更新日志**
-- V2版本改进记录
-- 功能变更说明
-- **仅供历史参考**
-
-### 🏀 [NBA_MARKET_DEPTH.md](./NBA_MARKET_DEPTH.md)
-**NBA市场深度分析**
-- Polymarket NBA市场特点
-- 市场流动性分析
-- 交易量统计
-- **适合市场研究**
-
-### ✅ [INTEGRATION_COMPLETE.md](./INTEGRATION_COMPLETE.md)
-**集成完成确认文档**
-- 集成验收清单
-- 功能测试记录
-- **项目里程碑记录**
+### 🐛 [DEBUG_PRICES.md](./DEBUG_PRICES.md)
+**价格获取调试指南**
+- 价格获取失败原因分析
+- Polymarket API 调试方法
+- **适合排查价格问题**
 
 ## 📑 文档快速导航
 
@@ -107,22 +75,22 @@
 ### 遇到TLS连接错误或API超时
 → 阅读 [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - 完整的故障排除指南
 
-### WebSocket连接有问题
-→ 阅读 [WEBSOCKET_STATUS.md](./WEBSOCKET_STATUS.md) 的"常见问题"部分
+### 价格获取有问题
+→ 阅读 [DEBUG_PRICES.md](./DEBUG_PRICES.md) - 价格调试指南
 
 ### 我想自己开发类似功能
 → 依次阅读：
 1. [PRD.md](./PRD.md) - 了解功能需求
-2. [WEBSOCKET_STATUS.md](./WEBSOCKET_STATUS.md) - 了解技术实现
-3. [SIGNALS_GUIDE.md](./SIGNALS_GUIDE.md) - 了解策略逻辑
+2. [SIGNALS_GUIDE.md](./SIGNALS_GUIDE.md) - 了解策略逻辑
+3. [README.md](./README.md) - 了解技术实现
 
 ## 🔑 关键功能一览
 
 ### 实时数据监控
-- ✅ **WebSocket实时价格** - < 1秒延迟
-- ✅ **REST API轮询备份** - 30秒更新
+- ✅ **REST API 价格轮询** - 45秒更新
+- ✅ **请求队列控制** - 避免API过载
 - ✅ **智能延迟机制** - 避免资源耗尽
-- ✅ **比赛实时比分** - 30秒更新
+- ✅ **比赛实时比分** - 10秒更新
 - ✅ **ESPN胜率预测** - 赛前+赛中双显示
 
 ### 智能交易策略
@@ -146,12 +114,6 @@ HTTP_PROXY=http://127.0.0.1:7890     # Clash代理
 HTTPS_PROXY=http://127.0.0.1:7890
 ```
 
-### 可选配置
-```bash
-# WebSocket开关
-VITE_ENABLE_WEBSOCKET=true   # true=启用WebSocket, false=仅REST API
-```
-
 ## 📊 技术栈
 
 ### 前端
@@ -161,9 +123,8 @@ VITE_ENABLE_WEBSOCKET=true   # true=启用WebSocket, false=仅REST API
 - Chart.js - 数据可视化
 
 ### 数据源
-- Polymarket WebSocket - 实时价格推送
-- Polymarket REST API - 价格数据备份
-- 虎扑 API - NBA比赛数据
+- Polymarket REST API - 价格数据（45秒轮询）
+- 虎扑 API - NBA比赛数据（10秒更新）
 - ESPN API - 胜率预测、伤病信息
 
 ### 核心算法
@@ -174,21 +135,20 @@ VITE_ENABLE_WEBSOCKET=true   # true=启用WebSocket, false=仅REST API
 ## 🎯 项目特点
 
 1. **专注NBA** - 仅支持Polymarket NBA市场
-2. **实时性强** - WebSocket < 1秒实时更新
+2. **更新及时** - REST API 45秒轮询，比分10秒更新
 3. **策略智能** - 多因素综合分析（价格+比分+时间+胜率）
 4. **持久化强** - 赛前胜率永久缓存
-5. **降级优雅** - WebSocket失败自动切换到REST API
+5. **系统简洁** - REST API 稳定可靠
 
 ## 📅 文档更新日志
 
-- 2025-11-25: 创建 TROUBLESHOOTING.md - 故障排除指南（TLS错误、API超时）
-- 2025-11-25: 更新 CHANGELOG.md - v2.0.1版本记录（API重试机制、胜率过滤）
-- 2025-11-25: 创建 CHANGELOG.md - 项目版本更新日志
+- 2025-11-26: 清理项目 - 移除 WebSocket 相关代码和文档
+- 2025-11-25: 创建 TROUBLESHOOTING.md - 故障排除指南
+- 2025-11-25: 更新 CHANGELOG.md - API重试机制、胜率过滤
 - 2025-11-25: 创建 DOCS_INDEX.md - 文档索引总览
-- 2025-11-25: 创建 WEBSOCKET_STATUS.md - WebSocket实现状态文档
-- 2025-11-25: 更新 README.md - WebSocket直连、强队抄底策略
-- 2025-11-25: 更新 SIGNALS_GUIDE.md - 强队抄底详解、胜率门槛、提示音禁用
-- 2025-11-25: 更新 PRD.md - WebSocket方案、赛前胜率缓存、胜率门槛
+- 2025-11-25: 更新 README.md - 强队抄底策略
+- 2025-11-25: 更新 SIGNALS_GUIDE.md - 强队抄底详解、胜率门槛
+- 2025-11-25: 更新 PRD.md - 赛前胜率缓存、胜率门槛
 
 ## ⚠️ 免责声明
 

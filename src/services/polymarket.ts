@@ -1,4 +1,3 @@
-import { getWebSocketClient } from './polymarketWebSocket';
 import { queuedFetch } from './requestQueue';
 
 const TEAM_NAME_MAP: Record<string, string> = {
@@ -393,8 +392,8 @@ export const searchPolymarketMatch = async (homeTeam: string, awayTeam: string, 
         ? JSON.parse(winnerMarket.outcomePrices) 
         : winnerMarket.outcomePrices;
       
-      // Use WebSocket prices with REST API fallback
-      const enrichedMarket = await enrichWithRealtimePrices(winnerMarket, `${homeEn} vs ${awayEn}`);
+      // Use REST API to get latest prices
+      const enrichedMarket = await enrichWithClobPrices(winnerMarket, `${homeEn} vs ${awayEn}`);
       
       // 检查价格是否有更新
       const pricesAfter = typeof enrichedMarket.outcomePrices === 'string'
@@ -515,143 +514,3 @@ export const normalizeMarketData = (market: PolymarketMarket, homeTeamEn: string
   }
 };
 
-/**
- * Real-time price cache updated by WebSocket
- */
-const realtimePriceCache = new Map<string, { price: string; timestamp: number }>();
-
-/**
- * Initialize WebSocket connection and subscribe to token updates
- * @param tokenIds Array of token IDs to subscribe to
- * @returns Unsubscribe function
- */
-export function subscribeToRealtimePrices(
-  tokenIds: string[],
-  onUpdate?: (tokenId: string, price: string) => void
-): () => void {
-  if (tokenIds.length === 0) {
-    return () => {};
-  }
-
-  const wsClient = getWebSocketClient();
-
-  // Connect if not already connected
-  if (!wsClient.isConnected()) {
-    wsClient.connect().then(() => {
-      wsClient.subscribeToTokens(tokenIds);
-      console.log('[RT Prices] ✓ Subscribed to', tokenIds.length, 'tokens via WebSocket');
-    }).catch(error => {
-      console.error('[RT Prices] Failed to connect WebSocket:', error);
-    });
-  } else {
-    wsClient.subscribeToTokens(tokenIds);
-    console.log('[RT Prices] ✓ Subscribed to', tokenIds.length, 'tokens');
-  }
-
-  // Register callback for price updates
-  const unsubscribeCallback = wsClient.onPriceUpdate((tokenId, price, side) => {
-    // Only track SELL side prices (market maker prices)
-    if (side === 'SELL') {
-      realtimePriceCache.set(tokenId, {
-        price,
-        timestamp: Date.now()
-      });
-
-      // Notify caller if callback provided
-      if (onUpdate) {
-        onUpdate(tokenId, price);
-      }
-    }
-  });
-
-  // Return cleanup function
-  return () => {
-    wsClient.unsubscribeFromTokens(tokenIds);
-    unsubscribeCallback();
-  };
-}
-
-/**
- * Get cached real-time price for a token (if available and recent)
- * @param tokenId Token ID
- * @param maxAge Maximum age in milliseconds (default: 10 seconds)
- * @returns Cached price or null
- */
-export function getRealtimePrice(tokenId: string, maxAge = 10000): string | null {
-  const cached = realtimePriceCache.get(tokenId);
-  if (!cached) return null;
-
-  const age = Date.now() - cached.timestamp;
-  if (age > maxAge) {
-    realtimePriceCache.delete(tokenId);
-    return null;
-  }
-
-  return cached.price;
-}
-
-/**
- * Enhanced version of enrichWithClobPrices that uses WebSocket prices when available
- */
-export const enrichWithRealtimePrices = async (
-  market: PolymarketMarket, 
-  marketName?: string
-): Promise<PolymarketMarket> => {
-  if (!market.clobTokenIds) {
-    return market;
-  }
-
-  // Parse clobTokenIds
-  let tokenIds: string[] = [];
-  try {
-    if (typeof market.clobTokenIds === 'string') {
-      tokenIds = JSON.parse(market.clobTokenIds);
-    } else if (Array.isArray(market.clobTokenIds)) {
-      tokenIds = market.clobTokenIds;
-    } else {
-      return market;
-    }
-  } catch (e) {
-    return market;
-  }
-
-  if (tokenIds.length === 0) {
-    return market;
-  }
-
-  // Try to get prices from WebSocket cache first
-  const realtimePrices: (string | null)[] = tokenIds.map(tokenId => 
-    getRealtimePrice(tokenId)
-  );
-
-  // Check if we have all prices from WebSocket
-  const allPricesAvailable = realtimePrices.every(p => p !== null);
-
-  if (allPricesAvailable) {
-    // Use WebSocket prices
-    const sum = realtimePrices.reduce((acc, p) => acc + parseFloat(p!), 0);
-    
-    if (Math.abs(sum - 1.0) < 0.03) {
-      // Normalize if needed
-      let finalPrices = realtimePrices as string[];
-      if (Math.abs(sum - 1.0) > 0.001) {
-        finalPrices = realtimePrices.map(p => (parseFloat(p!) / sum).toFixed(4));
-      }
-
-      if (marketName) {
-        console.log(`[RT Prices] ✓ ${marketName} - Using WebSocket prices`);
-      }
-
-      return {
-        ...market,
-        outcomePrices: finalPrices
-      };
-    }
-  }
-
-  // Fallback to REST API when WebSocket prices unavailable
-  if (marketName) {
-    console.log(`[RT Prices] ⚠️ ${marketName} - WebSocket价格不可用，使用REST API`);
-  }
-  return enrichWithClobPrices(market, marketName);
-};

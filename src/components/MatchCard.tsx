@@ -386,7 +386,7 @@ export function MatchCard({ match }: MatchCardProps) {
       >
       {/* Status - Top */}
       <div className="mb-4">
-        <div className="text-xs font-medium text-gray-500 tracking-wide uppercase">
+        <div className="text-sm font-medium text-gray-500 tracking-wide uppercase">
           {statusText}
         </div>
       </div>
@@ -395,39 +395,39 @@ export function MatchCard({ match }: MatchCardProps) {
       <div className="flex justify-between items-center mb-5">
         {/* Away Team */}
         <div className="text-center flex-1">
-          <div className={`text-sm font-bold mb-2 ${currentSignal?.team === awayTeamName ? 'text-yellow-400' : 'text-white'}`}>
+          <div className={`text-base font-bold mb-2 ${currentSignal?.team === awayTeamName ? 'text-yellow-400' : 'text-white'}`}>
             {awayTeamName}
           </div>
-          <div className="text-4xl font-black text-white tracking-tighter">{awayScore ?? '-'}</div>
+          <div className="text-5xl font-black text-white tracking-tighter">{awayScore ?? '-'}</div>
         </div>
 
         {/* VS & Score Diff */}
         <div className="px-6 text-center">
-          <div className="text-xs text-gray-600 mb-1">VS</div>
-          <div className={`text-2xl font-black ${scoreDiff > 0 ? 'text-green-400' : scoreDiff < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+          <div className="text-sm text-gray-600 mb-1">VS</div>
+          <div className={`text-3xl font-black ${scoreDiff > 0 ? 'text-green-400' : scoreDiff < 0 ? 'text-red-400' : 'text-gray-500'}`}>
             {formattedDiff}
           </div>
-          <div className="text-[10px] text-gray-600 mt-1">分差</div>
+          <div className="text-xs text-gray-600 mt-1">分差</div>
         </div>
 
         {/* Home Team */}
         <div className="text-center flex-1">
-          <div className={`text-sm font-bold mb-2 ${currentSignal?.team === homeTeamName ? 'text-yellow-400' : 'text-white'}`}>
+          <div className={`text-base font-bold mb-2 ${currentSignal?.team === homeTeamName ? 'text-yellow-400' : 'text-white'}`}>
             {homeTeamName}
           </div>
-          <div className="text-4xl font-black text-white tracking-tighter">{homeScore ?? '-'}</div>
+          <div className="text-5xl font-black text-white tracking-tighter">{homeScore ?? '-'}</div>
         </div>
       </div>
 
       {/* ESPN Win Probability Bar */}
       {winProb && matchStatus !== 'COMPLETED' && (
         <div className="mb-4 bg-white/5 rounded-lg p-3">
-          <div className="text-[10px] text-gray-500 text-center mb-2">
+          <div className="text-xs text-gray-500 text-center mb-2">
             ESPN 胜率 {winProb.isPregame ? '(赛前预测)' : '(实时)'}
           </div>
           <div className="flex items-center gap-2">
             {/* 左边：客队 */}
-            <div className="text-xs font-mono text-blue-400 w-12 text-right">
+            <div className="text-sm font-mono text-blue-400 w-14 text-right">
               {((1 - winProb.homeWinPercentage) * 100).toFixed(0)}%
             </div>
             <div className="flex-1 h-3 bg-gray-800 rounded-full overflow-hidden flex">
@@ -443,7 +443,7 @@ export function MatchCard({ match }: MatchCardProps) {
               />
             </div>
             {/* 右边：主队 */}
-            <div className="text-xs font-mono text-red-400 w-12">
+            <div className="text-sm font-mono text-red-400 w-14">
               {(winProb.homeWinPercentage * 100).toFixed(0)}%
             </div>
           </div>
@@ -474,8 +474,8 @@ export function MatchCard({ match }: MatchCardProps) {
         <div className="flex justify-around items-center">
           {/* Away Price */}
           <div className="text-center flex-1">
-            <div className="text-xs text-gray-500 mb-1">{awayTeamName}</div>
-            <div className={`text-3xl font-black font-mono ${
+            <div className="text-sm text-gray-500 mb-1">{awayTeamName}</div>
+            <div className={`text-4xl font-black font-mono ${
               polyData.awayRawPrice >= 0.65 ? 'text-red-400' : 
               polyData.awayRawPrice <= 0.45 ? 'text-green-400' : 
               'text-gray-300'
@@ -488,8 +488,8 @@ export function MatchCard({ match }: MatchCardProps) {
 
           {/* Home Price */}
           <div className="text-center flex-1">
-            <div className="text-xs text-gray-500 mb-1">{homeTeamName}</div>
-            <div className={`text-3xl font-black font-mono ${
+            <div className="text-sm text-gray-500 mb-1">{homeTeamName}</div>
+            <div className={`text-4xl font-black font-mono ${
               polyData.homeRawPrice >= 0.65 ? 'text-red-400' : 
               polyData.homeRawPrice <= 0.45 ? 'text-green-400' : 
               'text-gray-300'

@@ -15,6 +15,7 @@ function App() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>('all');
+  const [isGuideExpanded, setIsGuideExpanded] = useState(true);
   const { allSignals, topSignal } = useSignals();
 
   // 筛选（不排序，保持原始顺序）
@@ -183,17 +184,21 @@ function App() {
         </div>
         
         {/* Main Content - Color Guide + Matches Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="flex gap-6">
           {/* Color Guide - Left Side */}
-          <div className="lg:col-span-4">
+          <div className={`transition-all duration-300 flex-shrink-0 ${isGuideExpanded ? 'w-80' : 'w-16'}`}>
             <div className="sticky top-8">
-              <ColorGuide />
+              <ColorGuide isExpanded={isGuideExpanded} onToggle={() => setIsGuideExpanded(!isGuideExpanded)} />
             </div>
           </div>
 
           {/* Matches Grid - Right Side */}
-          <div className="lg:col-span-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="flex-1 transition-all duration-300">
+            <div className={`grid gap-4 ${
+              isGuideExpanded 
+                ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' 
+                : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+            }`}>
               {loading ? (
                 <div className="col-span-full text-center text-gray-500 py-12">加载比赛数据中...</div>
               ) : filteredAndSortedMatches.length > 0 ? (

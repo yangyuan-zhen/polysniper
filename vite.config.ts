@@ -22,9 +22,28 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/polymarket/, ''),
         agent: agent,
+        secure: false, // 禁用 SSL 验证以避免 TLS 连接问题
+        timeout: 15000, // 15秒超时
         configure: (proxy) => {
-          proxy.on('error', (err) => {
+          proxy.on('error', (err, _req, res) => {
             console.log('Polymarket proxy error:', err.message);
+            // 返回空响应而不是让请求挂起
+            if (res && typeof res !== 'object') return;
+            const response = res as any;
+            if (response.headersSent) return;
+            try {
+              response.writeHead(500, { 'Content-Type': 'application/json' });
+              response.end(JSON.stringify({ error: 'Proxy error', message: err.message }));
+            } catch (e) {
+              // 忽略写入失败
+            }
+          });
+          proxy.on('proxyReq', (proxyReq) => {
+            // 添加超时处理
+            proxyReq.setTimeout(15000, () => {
+              console.log('[Polymarket Proxy] Request timeout');
+              proxyReq.destroy();
+            });
           });
         },
       },
@@ -33,6 +52,7 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/clob/, ''),
         agent: agent,
+        secure: false, // 禁用 SSL 验证以避免 TLS 连接问题
         timeout: 10000, // 10秒超时
         configure: (proxy) => {
           proxy.on('error', (err, _req, res) => {

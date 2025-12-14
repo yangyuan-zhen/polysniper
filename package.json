@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:hupu": "node scripts/test-hupu-performance.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",

@@ -1,5 +1,6 @@
 import { Clock, Activity } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { WebSocketStatus } from './WebSocketStatus';
 
 export function Header() {
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('zh-CN', { hour12: false }));
@@ -29,6 +30,10 @@ export function Header() {
           <Clock className="w-4 h-4" />
           <span>实时更新: <span className="text-gray-200 font-mono">{currentTime}</span></span>
         </div>
+        
+        {/* WebSocket 连接状态 */}
+        <WebSocketStatus />
+        
         <div className="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
           <span className="text-xs font-bold text-green-500 tracking-wide">实时数据</span>

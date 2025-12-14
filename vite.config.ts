@@ -77,9 +77,29 @@ export default defineConfig({
           });
         },
       },
-      // WebSocket代理 - 已禁用，不需要
-      // WebSocket协议不受CORS限制，前端代码直接连接 Polymarket
-      // wss://ws-subscriptions-clob.polymarket.com/ws/market
+      // WebSocket 代理 - 用于实时价格订阅
+      '/ws-poly': {
+        target: 'wss://ws-subscriptions-clob.polymarket.com',
+        changeOrigin: true,
+        ws: true, // 启用 WebSocket 代理
+        rewrite: (path) => path.replace(/^\/ws-poly/, '/ws'),
+        agent: agent,
+        secure: false,
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            console.log('[WebSocket Proxy Error]:', err.message);
+          });
+          proxy.on('proxyReqWs', (_proxyReq) => {
+            console.log('[WebSocket Proxy] 转发连接到 Polymarket');
+          });
+          proxy.on('open', () => {
+            console.log('[WebSocket Proxy] 连接已建立');
+          });
+          proxy.on('close', () => {
+            console.log('[WebSocket Proxy] 连接已关闭');
+          });
+        },
+      },
     },
   },
 })

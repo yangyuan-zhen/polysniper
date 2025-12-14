@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import type { Match } from '../services/api';
-import { searchPolymarketMatch, normalizeMarketData, getEnglishTeamName } from '../services/polymarket';
+import { searchPolymarketMatch, normalizeMarketData, getEnglishTeamName /* subscribeToMarketPrices 暂时禁用 */ } from '../services/polymarket';
 import { analyzeMatch } from '../services/strategy';
 import { useSignals } from '../contexts/SignalContext';
 import { getTeamInjuries, getGameWinProbability, getESPNTeamName } from '../services/espn';

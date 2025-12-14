@@ -39,6 +39,8 @@ export const fetchDailyMatches = async (): Promise<Match[]> => {
   const timeout = 8000; // 8秒超时（虎扑API可能较慢）
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const startTime = performance.now(); // 开始计时
+    
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -55,6 +57,8 @@ export const fetchDailyMatches = async (): Promise<Match[]> => {
       }
       
       const data: ApiResponse = await response.json();
+      const parseTime = performance.now() - startTime;
+      const totalTime = Math.round(parseTime);
       
       const currentDate = data.result.scheduleListStats.currentDate;
       const todayGames = data.result.gameList.find(g => g.day === currentDate);
@@ -66,7 +70,8 @@ export const fetchDailyMatches = async (): Promise<Match[]> => {
       const completedGames = matches.filter(m => m.matchStatus === 'COMPLETED').length;
       const upcomingGames = matches.filter(m => m.matchStatus === 'NOTSTARTED' || m.matchStatus === 'SCHEDULED').length;
       
-      console.log(`[虎扑API] ✅ 获取 ${matches.length} 场比赛 (进行中:${liveGames} 已结束:${completedGames} 未开始:${upcomingGames})`);
+      // 性能监控日志（Keep-Alive 生效后应该看到耗时显著降低）
+      console.log(`[虎扑API] ✅ ${totalTime}ms - 获取 ${matches.length} 场比赛 (进行中:${liveGames} 已结束:${completedGames} 未开始:${upcomingGames})`);
       
       // 显示进行中比赛的比分
       if (liveGames > 0) {
@@ -77,10 +82,12 @@ export const fetchDailyMatches = async (): Promise<Match[]> => {
       
       return matches;
     } catch (error: any) {
+      const failTime = Math.round(performance.now() - startTime);
+      
       if (error.name === 'AbortError') {
-        console.warn(`[API] Hupu request timeout (attempt ${attempt + 1}/${maxRetries + 1})`);
+        console.warn(`[API] ⏱️ Hupu timeout after ${failTime}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
       } else {
-        console.warn(`[API] Error fetching matches (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
+        console.warn(`[API] ❌ Error after ${failTime}ms (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
       }
       
       if (attempt === maxRetries) {

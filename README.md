@@ -8,11 +8,14 @@
 ## ✨ 核心功能
 
 ### 📊 实时数据监控
-- **价格自动更新**：
-  - REST API轮询：每45秒自动更新
-  - 请求队列控制：最多3个并发请求，避免过载
-  - 智能延迟：随机0-15秒初始延迟，分散请求
-- **比赛实时比分**：每10秒更新，获取虎扑 API 比赛数据
+- **价格数据**：
+  - **REST API 轮询** - 进行中比赛每 45 秒更新，其他每 120 秒
+  - 价格缓存机制，避免重复更新
+  - 未来计划：独立后端服务处理 WebSocket
+- **比赛实时比分**：
+  - **更新频率**：每5秒更新（启用 HTTP Keep-Alive 优化后）
+  - **性能提升**：连接复用使响应时间从 ~896ms 降至 ~300ms（提升66%）
+  - **数据源**：虎扑 API 比赛数据
 - **ESPN 胜率预测**：
   - 赛前：基于博彩赔率计算，永久缓存（localStorage持久化）
   - 赛中：实时 Win Probability 动态更新
@@ -83,18 +86,29 @@ HTTPS_PROXY=http://127.0.0.1:7890
 - **Chart.js** - 图表可视化
 
 ### 数据源
-- **Polymarket REST API** - 价格数据（每45秒轮询）
-- **虎扑 API** - NBA 比赛数据（30秒更新）
+- **Polymarket API** - 价格数据（**REST API 轮询**）
+  - 进行中比赛：45 秒更新间隔
+  - 其他比赛：120 秒更新间隔
+  - 缓存机制避免重复请求
+- **虎扑 API** - NBA 比赛数据（**每5秒更新** ⚡）
+  - 启用 HTTP Keep-Alive 连接复用
+  - 性能提升 66%（~896ms → ~300ms）
 - **ESPN API** - 胜率预测、伤病信息
 
 ---
 
 ## 📖 文档
 
+### 核心文档
 - [📚 DOCS_INDEX.md](./DOCS_INDEX.md) - **文档索引总览** ⭐
 - [🔧 TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - **故障排除指南** 🆕
 - [📝 CHANGELOG.md](./CHANGELOG.md) - **项目更新日志** 🆕
+
+### 功能说明
 - [📊 SIGNALS_GUIDE.md](./SIGNALS_GUIDE.md) - 交易信号详解
+- [⚡ HUPU_API_OPTIMIZATION.md](./HUPU_API_OPTIMIZATION.md) - **虎扑API性能优化**
+
+### 产品文档
 - [📋 PRD.md](./PRD.md) - 产品需求文档
 
 ---
@@ -174,6 +188,23 @@ npm run lint
 - 信号算法基于历史数据，无法保证未来收益
 - 建议小额测试，验证策略有效性
 - 请遵守当地法律法规
+
+---
+
+## 🚧 未来计划
+
+### 后端服务开发
+当前前端直接调用 Polymarket API 存在以下限制：
+- **CORS 跨域限制**：浏览器安全策略限制直接 WebSocket 连接
+- **API Key 管理**：前端无法安全存储 API密钥
+- **请求频率限制**：多个前端实例分别请求
+
+**解决方案**：
+- 开发独立后端服务（Node.js/Python）
+- 后端统一处理 Polymarket WebSocket 连接
+- 前端通过后端 API 获取实时数据
+- 实现 API Key 安全管理
+- 请求合并和缓存优化
 
 ---
 

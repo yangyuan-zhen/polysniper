@@ -1,4 +1,5 @@
 import { queuedFetch } from './requestQueue';
+import { polymarketWS, type PriceUpdate } from './polymarketWebSocket';
 
 const TEAM_NAME_MAP: Record<string, string> = {
   '凯尔特人': 'Celtics',
@@ -57,11 +58,46 @@ export const getEnglishTeamName = (chineseName: string): string => {
   return TEAM_NAME_MAP[chineseName] || chineseName;
 };
 
+// WebSocket 价格缓存
+const wsPriceCache = new Map<string, { price: string; timestamp: number }>();
+const WS_CACHE_DURATION = 60000; // 60 秒缓存有效期
+
+/**
+ * 从 WebSocket 缓存获取价格
+ */
+const getPriceFromWSCache = (tokenId: string): string | null => {
+  const cached = wsPriceCache.get(tokenId);
+  if (!cached) return null;
+  
+  // 检查缓存是否过期
+  if (Date.now() - cached.timestamp > WS_CACHE_DURATION) {
+    wsPriceCache.delete(tokenId);
+    return null;
+  }
+  
+  return cached.price;
+};
+
+/**
+ * 更新 WebSocket 价格缓存
+ */
+const updateWSPriceCache = (tokenId: string, price: string): void => {
+  wsPriceCache.set(tokenId, {
+    price,
+    timestamp: Date.now()
+  });
+};
+
 /**
  * Fetch CLOB price via REST API (Fallback only - WebSocket is preferred)
  * This is only used when WebSocket prices are unavailable
  */
 const fetchClobPrice = async (tokenId: string, retries = 2): Promise<string | null> => {
+  // 首先检查 WebSocket 缓存
+  const wsPrice = getPriceFromWSCache(tokenId);
+  if (wsPrice !== null) {
+    return wsPrice;
+  }
   const timeout = 5000; // 增加到5秒超时
   
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -100,9 +136,51 @@ const fetchClobPrice = async (tokenId: string, retries = 2): Promise<string | nu
 };
 
 /**
+ * 使用 WebSocket 订阅价格更新
+ */
+export const subscribeToMarketPrices = (
+  tokenIds: string[],
+  onUpdate: (tokenId: string, price: string) => void
+): (() => void) => {
+  if (tokenIds.length === 0) {
+    return () => {};
+  }
+  
+  // 确保 WebSocket 已连接
+  if (polymarketWS.getConnectionState() === 'disconnected') {
+    console.log('[WebSocket] 自动启动连接...');
+    polymarketWS.connect();
+  }
+  
+  // 为每个 tokenId 创建订阅
+  const callbacks: Array<() => void> = [];
+  
+  tokenIds.forEach(tokenId => {
+    const callback = (update: PriceUpdate) => {
+      // 更新缓存
+      updateWSPriceCache(update.tokenId, update.price);
+      // 通知订阅者
+      onUpdate(update.tokenId, update.price);
+    };
+    
+    polymarketWS.subscribe(tokenId, callback);
+    
+    // 保存取消订阅函数
+    callbacks.push(() => {
+      polymarketWS.unsubscribe(tokenId, callback);
+    });
+  });
+  
+  // 返回统一的取消订阅函数
+  return () => {
+    callbacks.forEach(unsubscribe => unsubscribe());
+  };
+};
+
+/**
  * Enrich market with CLOB prices via REST API (Fallback method)
  * Note: This is only used as fallback when WebSocket prices are unavailable
- * Prefer using enrichWithRealtimePrices() which uses WebSocket first
+ * Prefer using subscribeToMarketPrices() which uses WebSocket
  */
 const enrichWithClobPrices = async (market: PolymarketMarket, marketName?: string): Promise<PolymarketMarket> => {
   // If the market has CLOB token IDs, fetch live prices from CLOB

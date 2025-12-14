@@ -8,6 +8,7 @@ import { fetchDailyMatches } from './services/api';
 import type { Match } from './services/api';
 import { useSignals } from './contexts/SignalContext';
 import { Filter } from 'lucide-react';
+import { PollingConfig, getPollingConfigDescription } from './config/polling';
 
 type FilterType = 'all' | 'signals' | 'live';
 
@@ -84,14 +85,18 @@ function App() {
 
     // 初始加载
     loadMatches();
+    
+    // 输出轮询配置信息
+    console.log('[App] 📊 轮询配置:\n' + getPollingConfigDescription());
 
-    // 每 10 秒自动刷新比赛列表（提高比分更新频率）
+    // 自动刷新比赛列表（配合后端 Keep-Alive 连接复用）
+    // 后端启用了 HTTP Keep-Alive，连接建立耗时从 ~0.568s 降至接近 0
+    // 理论每次请求耗时从 ~0.896s 降至 ~0.3s，可以安全地提高刷新频率
     // 具体比赛数据由各个MatchCard组件独立轮询
-    // 使用请求队列后可以安全地增加刷新频率
     const interval = setInterval(() => {
       console.log('[App] 🔄 Refreshing match scores...');
       loadMatches();
-    }, 10000); // 10 seconds
+    }, PollingConfig.HUPU_API_INTERVAL);
 
     return () => clearInterval(interval);
   }, []); // 空依赖数组，避免无限循环

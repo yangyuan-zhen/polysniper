@@ -152,17 +152,13 @@ docker-compose up -d
 
 ## ⚠️ 注意事项
 
-1. **Polymarket 市场可用性**
-   - 并非所有 NBA 比赛都有 Polymarket 市场
-   - 季后赛和热门比赛覆盖率较高
-   - 普通常规赛可能没有对应市场
 
-2. **数据延迟**
+1. **数据延迟**
    - ESPN 数据: ~5-10 秒延迟
    - 虎扑数据: ~3-5 秒延迟
    - Polymarket: 实时（区块链确认时间）
 
-3. **限流保护**
+2. **限流保护**
    - API 请求限制: 100 次/分钟
    - WebSocket 连接无限制
 
@@ -175,6 +171,7 @@ docker-compose up -d
 ISC License
 
 ## 📞 联系方式
+yhrsc30@gmail.com
 
 如有问题，请查看：
 - [后端 API 文档](./server/API.md)

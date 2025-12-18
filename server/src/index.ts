@@ -24,13 +24,7 @@ async function start() {
     // 初始化缓存
     await cache.initialize();
 
-    // 启动数据采集
-    await dataAggregator.start();
-
-    // 启动WebSocket服务
-    wsServer.start();
-
-    // 启动HTTP服务器
+    // 启动HTTP服务器（先启动服务器）
     server.listen(config.port, () => {
       logger.info(`服务器运行中: http://localhost:${config.port}`);
       logger.info('API 接口:');
@@ -46,6 +40,16 @@ async function start() {
       logger.info('  matchesUpdate             - 接收比赛更新');
       logger.info('  signalAlert               - 接收套利信号告警');
     });
+
+    // 启动WebSocket服务
+    wsServer.start();
+
+    // 启动数据采集（放在最后，即使失败也不影响服务器运行）
+    try {
+      await dataAggregator.start();
+    } catch (error) {
+      logger.error('数据采集启动失败，但服务器继续运行:', error);
+    }
   } catch (error) {
     logger.error('服务器启动失败:', error);
     process.exit(1);

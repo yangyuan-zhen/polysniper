@@ -4,17 +4,18 @@ import { MatchCard } from './components/MatchCard';
 import { StrategySignalCard } from './components/StrategySignalCard';
 import { SignalLog } from './components/SignalLog';
 import { ColorGuide } from './components/ColorGuide';
-import { fetchDailyMatches } from './services/api';
-import type { Match } from './services/api';
+import { websocketService } from './services/websocket';
+import { fetchMatches } from './services/api';
+import type { UnifiedMatch } from './types/backend';
 import { useSignals } from './contexts/SignalContext';
 import { Filter } from 'lucide-react';
-import { PollingConfig, getPollingConfigDescription } from './config/polling';
 
 type FilterType = 'all' | 'signals' | 'live';
 
 function App() {
-  const [matches, setMatches] = useState<Match[]>([]);
+  const [matches, setMatches] = useState<UnifiedMatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [connected, setConnected] = useState(false);
   const [filter, setFilter] = useState<FilterType>('all');
   const [isGuideExpanded, setIsGuideExpanded] = useState(true);
   const { allSignals, topSignal } = useSignals();
@@ -25,10 +26,9 @@ function App() {
 
     // 应用筛选
     if (filter === 'signals') {
-      const matchIdsWithSignals = new Set(allSignals.map(s => s.matchId));
-      filtered = filtered.filter(m => matchIdsWithSignals.has(m.matchId));
+      filtered = filtered.filter(m => m.signals.length > 0);
     } else if (filter === 'live') {
-      filtered = filtered.filter(m => m.matchStatus === 'INPROGRESS');
+      filtered = filtered.filter(m => m.status === 'LIVE');
     }
 
     // 保持原始顺序（按比赛开始时间）
@@ -37,77 +37,68 @@ function App() {
 
   // 统计数据
   const stats = useMemo(() => {
-    const liveCount = matches.filter(m => m.matchStatus === 'INPROGRESS').length;
-    const signalMatchIds = new Set(allSignals.map(s => s.matchId));
-    const buySignals = allSignals.filter(s => s.type === 'STRONG_BUY' || s.type === 'BUY').length;
-    const sellSignals = allSignals.filter(s => s.type === 'STRONG_SELL' || s.type === 'SELL').length;
+    const liveCount = matches.filter(m => m.status === 'LIVE').length;
+    const withSignals = matches.filter(m => m.signals.length > 0).length;
+    const allSignalsFlat = matches.flatMap(m => m.signals);
+    const buySignals = allSignalsFlat.filter(s => s.type === 'BUY_HOME' || s.type === 'BUY_AWAY').length;
+    const sellSignals = allSignalsFlat.filter(s => s.type === 'SELL_HOME' || s.type === 'SELL_AWAY').length;
     
     return {
       total: matches.length,
       live: liveCount,
-      withSignals: signalMatchIds.size,
+      withSignals,
       buySignals,
       sellSignals,
     };
-  }, [matches, allSignals]);
+  }, [matches]);
 
   useEffect(() => {
-    let previousMatches: Match[] = [];
-    
-    const loadMatches = async () => {
-      try {
-        const data = await fetchDailyMatches();
-        
-        // 检查比分是否有变化
-        if (previousMatches.length > 0) {
-          const scoreChanged = data.some(newMatch => {
-            const oldMatch = previousMatches.find(m => m.matchId === newMatch.matchId);
-            return oldMatch && (
-              oldMatch.homeScore !== newMatch.homeScore ||
-              oldMatch.awayScore !== newMatch.awayScore ||
-              oldMatch.matchStatus !== newMatch.matchStatus
-            );
-          });
-          
-          if (scoreChanged) {
-            console.log('[App] 📊 比分已更新！');
-          }
-        }
-        
-        previousMatches = data;
-        setMatches(data);
-      } catch (error) {
-        console.error('Failed to load matches', error);
-      } finally {
-        setLoading(false);
+    console.log('[App] 🚀 初始化 WebSocket 连接...');
+
+    // 连接 WebSocket
+    websocketService.connect('http://localhost:3000');
+
+    // 监听连接状态
+    websocketService.onConnectionStatus((data) => {
+      console.log('[App] 连接状态:', data.connected ? '已连接' : '已断开', '-', data.message);
+      setConnected(data.connected);
+    });
+
+    // 监听比赛数据更新
+    websocketService.onMatchesUpdate((data) => {
+      console.log(`[App] 📊 收到比赛更新 (${data.type}):`, data.data.length, '场比赛');
+      setMatches(data.data);
+      setLoading(false);
+    });
+
+    // 监听套利信号告警
+    websocketService.onSignalAlert((data) => {
+      console.log(`[App] 🚨 套利信号告警 - ${data.matchId}:`, data.signals.length, '个信号');
+      // 可以在这里添加通知逻辑
+    });
+
+    // 订阅所有比赛
+    setTimeout(() => {
+      if (websocketService.isConnected()) {
+        websocketService.subscribe();
       }
+    }, 1000);
+
+    // 清理
+    return () => {
+      console.log('[App] 🔌 断开 WebSocket 连接');
+      websocketService.disconnect();
     };
-
-    // 初始加载
-    loadMatches();
-    
-    // 输出轮询配置信息
-    console.log('[App] 📊 轮询配置:\n' + getPollingConfigDescription());
-
-    // 自动刷新比赛列表（配合后端 Keep-Alive 连接复用）
-    // 后端启用了 HTTP Keep-Alive，连接建立耗时从 ~0.568s 降至接近 0
-    // 理论每次请求耗时从 ~0.896s 降至 ~0.3s，可以安全地提高刷新频率
-    // 具体比赛数据由各个MatchCard组件独立轮询
-    const interval = setInterval(() => {
-      console.log('[App] 🔄 Refreshing match scores...');
-      loadMatches();
-    }, PollingConfig.HUPU_API_INTERVAL);
-
-    return () => clearInterval(interval);
-  }, []); // 空依赖数组，避免无限循环
+  }, []);
 
   const handleRefresh = async () => {
     setLoading(true);
     try {
-      const data = await fetchDailyMatches();
+      console.log('[App] 🔄 手动刷新比赛数据...');
+      const data = await fetchMatches();
       setMatches(data);
     } catch (error) {
-      console.error('Failed to refresh matches', error);
+      console.error('[App] ❌ 刷新失败:', error);
     } finally {
       setLoading(false);
     }
@@ -177,6 +168,13 @@ function App() {
               
               <div className="w-px h-6 bg-white/10" />
               
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`} />
+                <span className="text-xs text-gray-500">
+                  {connected ? 'WebSocket 已连接' : 'WebSocket 未连接'}
+                </span>
+              </div>
+              
               <button
                 onClick={handleRefresh}
                 disabled={loading}
@@ -208,7 +206,7 @@ function App() {
                 <div className="col-span-full text-center text-gray-500 py-12">加载比赛数据中...</div>
               ) : filteredAndSortedMatches.length > 0 ? (
                 filteredAndSortedMatches.map((match) => (
-                  <MatchCard key={match.matchId} match={match} />
+                  <MatchCard key={match.id} match={match} />
                 ))
               ) : (
                 <div className="col-span-full text-center text-gray-500 py-12">

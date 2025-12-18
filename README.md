@@ -1,219 +1,182 @@
 # 🎯 PolySniper
 
-> NBA 预测市场实时监控与交易策略工具
+NBA 预测市场实时监控系统 - 整合 Polymarket、ESPN 和虎扑数据，提供套利信号分析
 
-![PolySniper](./src/assets/1.png)
-**PolySniper** 是一个专为 [Polymarket](https://polymarket.com) NBA 比赛预测市场设计的实时监控系统，通过整合多源数据提供智能交易信号。
+## 📁 项目结构
 
-## ✨ 核心功能
-
-### 📊 实时数据监控
-- **价格数据**：
-  - **REST API 轮询** - 进行中比赛每 45 秒更新，其他每 120 秒
-  - 价格缓存机制，避免重复更新
-  - 未来计划：独立后端服务处理 WebSocket
-- **比赛实时比分**：
-  - **更新频率**：每5秒更新（启用 HTTP Keep-Alive 优化后）
-  - **性能提升**：连接复用使响应时间从 ~896ms 降至 ~300ms（提升66%）
-  - **数据源**：虎扑 API 比赛数据
-- **ESPN 胜率预测**：
-  - 赛前：基于博彩赔率计算，永久缓存（localStorage持久化）
-  - 赛中：实时 Win Probability 动态更新
-  - 双显示：比赛进行中同时显示实时胜率和赛前预测作为参考
-- **伤病信息**：实时查看球队伤病报告
-
-### 🎯 智能交易策略
-基于**价格 + 比分 + 时间 + ESPN胜率**四重因素分析：
-
-- **🟢 强队抄底策略**：
-  - 使用**赛前ESPN胜率**判断强队（>65%）
-  - 当强队价格低于赛前预期时，即使暂时落后也识别为买入机会
-  - 考虑时间因素：比赛早期机会更大
-- **🔴 领先套现策略**：价格过高 + 大幅领先 → 卖出信号
-- **置信度评分**：每个信号都有置信度评估（50-100%）
-- **静音模式**：提示音已禁用，通过UI和控制台日志提示
-
-### 📈 数据可视化
-- **价格趋势图**：Chart.js 绘制实时价格走势
-- **信号历史**：完整记录所有交易信号
-- **比赛筛选**：按状态（进行中/未开始/已结束）快速过滤
-
----
+```
+polysniper/
+├── client/          # 前端应用 (React + Vite + TailwindCSS)
+├── server/          # 后端服务 (Node.js + Express + WebSocket)
+├── package.json     # 根配置文件
+└── README.md        # 项目说明
+```
 
 ## 🚀 快速开始
 
-### 前置要求
-- Node.js 18+
-- VPN/Clash（访问 Polymarket API）
-
-### 安装
-```bash
-# 克隆项目
-git clone <repository-url>
-cd polysniper
-
-# 安装依赖
-npm install
-
-# 启动开发服务器
-npm run dev
-```
-
-### 环境变量配置
-
-创建 `.env` 文件：
+### 安装依赖
 
 ```bash
-# Clash 代理配置（必需）
-HTTP_PROXY=http://127.0.0.1:7890
-HTTPS_PROXY=http://127.0.0.1:7890
+# 安装所有依赖（根目录 + 前端 + 后端）
+npm run install:all
 ```
 
-**注意**：确保 Clash 或其他代理工具的**系统代理**已开启。
-
----
-
-## 🏗️ 技术栈
-
-### 前端框架
-- **React 18** + **TypeScript**
-- **Vite** - 快速开发构建
-- **Redux Toolkit** - 状态管理
-
-### UI 组件
-- **TailwindCSS** - 样式框架
-- **Lucide React** - 图标库
-- **Chart.js** - 图表可视化
-
-### 数据源
-- **Polymarket API** - 价格数据（**REST API 轮询**）
-  - 进行中比赛：45 秒更新间隔
-  - 其他比赛：120 秒更新间隔
-  - 缓存机制避免重复请求
-- **虎扑 API** - NBA 比赛数据（**每5秒更新** ⚡）
-  - 启用 HTTP Keep-Alive 连接复用
-  - 性能提升 66%（~896ms → ~300ms）
-- **ESPN API** - 胜率预测、伤病信息
-
----
-
-## 📖 文档
-
-### 核心文档
-- [📚 DOCS_INDEX.md](./DOCS_INDEX.md) - **文档索引总览** ⭐
-- [🔧 TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - **故障排除指南** 🆕
-- [📝 CHANGELOG.md](./CHANGELOG.md) - **项目更新日志** 🆕
-
-### 功能说明
-- [📊 SIGNALS_GUIDE.md](./SIGNALS_GUIDE.md) - 交易信号详解
-- [⚡ HUPU_API_OPTIMIZATION.md](./HUPU_API_OPTIMIZATION.md) - **虎扑API性能优化**
-
-### 产品文档
-- [📋 PRD.md](./PRD.md) - 产品需求文档
-
----
-
-## 🎨 界面预览
-
-### 比赛卡片颜色
-- 🟢 **绿色**：主队价格 ≥ 60¢（市场看好主队）
-- 🔴 **红色**：主队价格 ≤ 40¢（市场看好客队）
-- ⚪ **灰色**：价格 40-60¢（势均力敌）
-
-### 交易策略信号
-- 🟢 **强买入**：价格低 + 小幅落后 + 胜率支持（≥50%或≥45%）→ 抄底时机
-- 🟢 **买入**：价格合适 + 有反弹空间 + 基本胜率（≥45%或≥40%）
-- 🔴 **强卖出**：价格高 + 大幅领先 → 套现时机
-- 🔴 **卖出**：领先但价格未达理想点
-- ⚪ **观望**：无明确信号或胜率不支持
-
----
-
-## ⚙️ 项目结构
-
-```
-src/
-├── components/                 # React 组件
-│   ├── MatchCard.tsx          # 比赛卡片（核心组件）
-│   ├── StrategySignalCard.tsx # 策略信号卡片
-│   ├── SignalLog.tsx          # 信号历史记录
-│   ├── ColorGuide.tsx         # 颜色指南
-│   ├── Header.tsx             # 顶部导航
-│   └── TeamInfoModal.tsx      # 球队详情弹窗（伤病信息）
-├── services/                   # API 服务
-│   ├── api.ts                 # 虎扑 API (比赛数据)
-│   ├── polymarket.ts          # Polymarket REST API (价格)
-│   ├── espn.ts                # ESPN API (胜率/伤病)
-│   ├── requestQueue.ts        # 请求队列控制
-│   └── strategy.ts            # 交易策略算法（强队抄底）
-├── contexts/                   # Context API
-│   └── SignalContext.tsx      # 信号全局状态管理
-├── types/                      # TypeScript 类型定义
-│   └── index.ts               # 统一类型导出
-├── App.tsx                     # 主应用
-└── main.tsx                    # 应用入口
-```
-
-**关键文件说明**：
-- `polymarket.ts` - Polymarket REST API，价格数据获取
-- `strategy.ts` - 核心策略逻辑，包含强队抄底算法
-- `MatchCard.tsx` - 单个比赛卡片，整合所有数据和信号
-- `SignalContext.tsx` - 全局信号管理，信号聚合和筛选
-
----
-
-## 🔧 开发命令
+### 开发模式
 
 ```bash
-# 开发模式
+# 同时启动前后端开发服务器
 npm run dev
 
-# 构建生产版本
+# 或分别启动
+npm run dev:server  # 后端: http://localhost:3000
+npm run dev:client  # 前端: http://localhost:5173
+```
+
+### 生产构建
+
+```bash
+# 构建前后端
 npm run build
 
-# 预览生产构建
-npm run preview
-
-# 代码检查
-npm run lint
+# 启动生产服务器
+npm start
 ```
 
----
+## 🔧 技术栈
 
-## ⚠️ 免责声明
+### 前端
+- **框架**: React 19 + TypeScript
+- **构建工具**: Vite 7
+- **样式**: TailwindCSS 4
+- **图表**: Recharts
+- **图标**: Lucide React
+- **WebSocket**: Socket.IO Client
 
-本工具仅供学习和研究使用，不构成任何投资建议。
+### 后端
+- **运行时**: Node.js + TypeScript
+- **框架**: Express
+- **WebSocket**: Socket.IO
+- **缓存**: Redis (可选)
+- **日志**: Winston
+- **数据源**: 
+  - Polymarket API (价格数据)
+  - ESPN API (胜率预测)
+  - 虎扑 API (实时比分)
 
-- 预测市场具有风险，交易需谨慎
-- 信号算法基于历史数据，无法保证未来收益
-- 建议小额测试，验证策略有效性
-- 请遵守当地法律法规
+## 📡 API 端点
 
----
+### REST API
+- `GET /health` - 健康检查
+- `GET /api/matches` - 获取所有比赛
+- `GET /api/matches/:id` - 获取单场比赛
+- `GET /api/signals` - 获取套利信号
+- `GET /api/stats` - 获取统计信息
 
-## 🚧 未来计划
+### WebSocket
+- **连接**: `ws://localhost:3000`
+- **事件**:
+  - `subscribe` - 订阅比赛更新
+  - `unsubscribe` - 取消订阅
+  - `matchesUpdate` - 接收比赛更新
+  - `signalAlert` - 接收套利信号
 
-### 后端服务开发
-当前前端直接调用 Polymarket API 存在以下限制：
-- **CORS 跨域限制**：浏览器安全策略限制直接 WebSocket 连接
-- **API Key 管理**：前端无法安全存储 API密钥
-- **请求频率限制**：多个前端实例分别请求
+详细 API 文档：[server/API.md](./server/API.md)
 
-**解决方案**：
-- 开发独立后端服务（Node.js/Python）
-- 后端统一处理 Polymarket WebSocket 连接
-- 前端通过后端 API 获取实时数据
-- 实现 API Key 安全管理
-- 请求合并和缓存优化
+## 🎨 功能特性
 
----
+- ✅ **实时数据更新** - WebSocket 每 3 秒推送最新数据
+- ✅ **多数据源整合** - Polymarket + ESPN + 虎扑
+- ✅ **套利信号分析** - 自动计算价格差异和套利机会
+- ✅ **响应式设计** - 适配桌面和移动设备
+- ✅ **数据可视化** - 实时图表展示价格走势
+- ✅ **智能匹配** - 自动匹配不同平台的球队名称
 
-## 📝 License
+## 📊 数据更新频率
 
-MIT
+- **后台采集**: 每 5 秒刷新
+- **WebSocket 推送**: 每 3 秒
+- **前端轮询**: 按需（主要使用 WebSocket）
 
----
+## 🔐 环境配置
+
+### 后端 (.env)
+
+```bash
+# 服务配置
+PORT=3000
+NODE_ENV=development
+
+# CORS
+CORS_ORIGIN=*
+
+# 限流
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX_REQUESTS=100
+
+# Redis (可选)
+REDIS_ENABLED=false
+REDIS_HOST=localhost
+REDIS_PORT=6379
+```
+
+## 📝 开发指南
+
+### 前端开发
+```bash
+cd client
+npm run dev      # 启动开发服务器
+npm run build    # 生产构建
+npm run lint     # 代码检查
+```
+
+### 后端开发
+```bash
+cd server
+npm run dev      # 启动开发服务器
+npm run build    # TypeScript 编译
+npm run test     # 运行测试
+```
+
+## 📦 部署
+
+### 使用 PM2 (推荐)
+```bash
+cd server
+npm run start:pm2
+```
+
+### Docker (待实现)
+```bash
+docker-compose up -d
+```
+
+## ⚠️ 注意事项
+
+1. **Polymarket 市场可用性**
+   - 并非所有 NBA 比赛都有 Polymarket 市场
+   - 季后赛和热门比赛覆盖率较高
+   - 普通常规赛可能没有对应市场
+
+2. **数据延迟**
+   - ESPN 数据: ~5-10 秒延迟
+   - 虎扑数据: ~3-5 秒延迟
+   - Polymarket: 实时（区块链确认时间）
+
+3. **限流保护**
+   - API 请求限制: 100 次/分钟
+   - WebSocket 连接无限制
 
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
+
+## 📄 许可证
+
+ISC License
+
+## 📞 联系方式
+
+如有问题，请查看：
+- [后端 API 文档](./server/API.md)
+- [开发文档](./server/docs/DEVELOPMENT.md)
+- [WebSocket 说明](./server/docs/WEBSOCKET.md)

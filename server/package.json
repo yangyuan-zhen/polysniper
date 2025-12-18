@@ -1,0 +1,54 @@
+{
+  "name": "polysniper-backend",
+  "version": "1.0.0",
+  "description": "Backend service for PolySniper - NBA prediction market monitoring system",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "nodemon src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:pm2": "pm2 start ecosystem.config.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:data": "ts-node src/test/dataSourceTest.ts",
+    "test:quick": "ts-node src/test/quickStart.ts",
+    "test:price": "ts-node src/test/testPriceRetrieval.ts",
+    "test:poly-debug": "ts-node src/test/debugPolymarketAPI.ts",
+    "test:compare-speed": "ts-node src/test/compareScoreSpeed.ts",
+    "test:parallel": "ts-node src/test/testParallelPerformance.ts",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix"
+  },
+  "keywords": [
+    "polymarket",
+    "nba",
+    "trading",
+    "websocket",
+    "realtime"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "redis": "^4.6.12",
+    "socket.io": "^4.6.1",
+    "winston": "^3.11.0",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.6",
+    "@types/ws": "^8.5.10",
+    "@typescript-eslint/eslint-plugin": "^6.17.0",
+    "@typescript-eslint/parser": "^6.17.0",
+    "eslint": "^8.56.0",
+    "nodemon": "^3.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}

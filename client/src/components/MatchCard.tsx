@@ -243,16 +243,12 @@ export function MatchCard({ match, onClick }: MatchCardProps) {
       <div className="bg-white/5 px-4 py-2 flex items-center justify-between border-t border-white/5">
         <div className="flex items-center gap-2 text-xs">
           <div className="flex items-center gap-1">
-            <span className={`w-1.5 h-1.5 rounded-full ${dataCompleteness.hasPolyData ? 'bg-green-400' : 'bg-gray-600'}`} title="Polymarket" />
-            <span className="text-gray-500">P</span>
-          </div>
-          <div className="flex items-center gap-1">
             <span className={`w-1.5 h-1.5 rounded-full ${dataCompleteness.hasESPNData ? 'bg-green-400' : 'bg-gray-600'}`} title="ESPN" />
-            <span className="text-gray-500">E</span>
+            <span className="text-gray-500">ESPN</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className={`w-1.5 h-1.5 rounded-full ${dataCompleteness.hasHupuData ? 'bg-green-400' : 'bg-gray-600'}`} title="虎扑" />
-            <span className="text-gray-500">H</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${dataCompleteness.hasPolyData ? 'bg-green-400' : 'bg-gray-600'}`} title="Polymarket" />
+            <span className="text-gray-500">Poly</span>
           </div>
         </div>
         <span className="text-xs text-gray-500">

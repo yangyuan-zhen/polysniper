@@ -1,6 +1,6 @@
 # 🎯 PolySniper
 
-NBA 预测市场实时监控系统 - 整合 Polymarket、ESPN 和虎扑数据，提供套利信号分析
+NBA 预测市场实时监控系统 - 整合 Polymarket 和 ESPN 数据，提供套利信号分析
 
 ## 📁 项目结构
 
@@ -59,9 +59,8 @@ npm start
 - **缓存**: Redis (可选)
 - **日志**: Winston
 - **数据源**: 
-  - Polymarket API (价格数据)
-  - ESPN API (胜率预测)
-  - 虎扑 API (实时比分)
+  - ESPN API (比赛赛程、实时比分、胜率预测、伤病信息)
+  - Polymarket API (市场价格数据)
 
 ## 📡 API 端点
 
@@ -85,7 +84,7 @@ npm start
 ## 🎨 功能特性
 
 - ✅ **实时数据更新** - WebSocket 每 3 秒推送最新数据
-- ✅ **多数据源整合** - Polymarket + ESPN + 虎扑
+- ✅ **多数据源整合** - ESPN + Polymarket
 - ✅ **套利信号分析** - 自动计算价格差异和套利机会
 - ✅ **响应式设计** - 适配桌面和移动设备
 - ✅ **数据可视化** - 实时图表展示价格走势
@@ -155,7 +154,6 @@ docker-compose up -d
 
 1. **数据延迟**
    - ESPN 数据: ~5-10 秒延迟
-   - 虎扑数据: ~3-5 秒延迟
    - Polymarket: 实时（区块链确认时间）
 
 2. **限流保护**

@@ -19,20 +19,24 @@ class WebSocketService {
 
   /**
    * 连接到后端 WebSocket 服务器
+   * @param url - 服务器地址,留空则使用当前域名(通过 Vite 代理)
    */
-  connect(url: string = 'http://localhost:3000'): void {
+  connect(url?: string): void {
     if (this.socket?.connected) {
       console.log('[WebSocket] 已经连接');
       return;
     }
 
-    console.log('[WebSocket] 正在连接到:', url);
+    // 如果没有指定 url,使用相对路径(会通过 Vite 代理)
+    const serverUrl = url || window.location.origin;
+    console.log('[WebSocket] 正在连接到:', serverUrl);
 
-    this.socket = io(url, {
-      transports: ['websocket'],
+    this.socket = io(serverUrl, {
+      transports: ['websocket', 'polling'], // 先尝试 websocket,失败则回退到 polling
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: this.maxReconnectAttempts,
+      path: '/socket.io', // Socket.IO 路径
     });
 
     this.setupEventHandlers();
@@ -120,6 +124,22 @@ class WebSocketService {
   onConnectionStatus(callback: ConnectionStatusCallback): void {
     if (!this.socket) return;
     this.socket.on('connectionStatus', callback);
+  }
+
+  /**
+   * 监听连接成功事件
+   */
+  onConnect(callback: () => void): void {
+    if (!this.socket) return;
+    this.socket.on('connect', callback);
+  }
+
+  /**
+   * 监听断开连接事件
+   */
+  onDisconnect(callback: () => void): void {
+    if (!this.socket) return;
+    this.socket.on('disconnect', callback);
   }
 
   /**

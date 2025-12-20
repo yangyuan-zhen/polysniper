@@ -13,6 +13,12 @@ export default defineConfig({
         target: 'http://localhost:3000',
         changeOrigin: true,
       },
+      // 代理 Socket.IO WebSocket 连接
+      '/socket.io': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        ws: true, // 启用 WebSocket 代理
+      },
     },
   },
 })

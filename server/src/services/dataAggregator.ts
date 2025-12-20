@@ -1,20 +1,18 @@
 import { logger } from '../utils/logger';
 import { espnService } from './espnService';
-import { hupuService } from './hupuService';
 import { polymarketService } from './polymarketService';
 import { arbitrageEngine } from './arbitrageEngine';
 import { UnifiedMatch, MatchStatus } from '../types';
 import { config } from '../config';
+import { NBA_TEAMS } from '../config/teamMappings';
 
 /**
  * 数据整合服务
- * 核心职责：整合 ESPN、虎扑、Polymarket 三个数据源
+ * 核心职责：整合 ESPN 和 Polymarket 两个数据源
  */
 class DataAggregator {
   private matches: Map<string, UnifiedMatch> = new Map();
   private updateInterval: NodeJS.Timeout | null = null;
-  private espnUpdateInterval: NodeJS.Timeout | null = null;
-  private hupuUpdateInterval: NodeJS.Timeout | null = null;
 
   /**
    * 启动数据采集
@@ -58,26 +56,44 @@ class DataAggregator {
   }
 
   /**
-   * 更新所有比赛数据
+   * 更新所有比赛数据（使用 ESPN 作为主数据源）
    */
   private async updateAllMatches(): Promise<void> {
     try {
-      // 1. 获取虎扑所有比赛（12月11日-23日）
-      const games = await hupuService.getAllGames();
+      // 获取未来3天的比赛数据
+      const today = new Date();
+      const dates: string[] = [];
+      
+      for (let i = 0; i < 3; i++) {
+        const date = new Date(today);
+        date.setDate(date.getDate() + i);
+        const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
+        dates.push(dateStr);
+      }
 
-      logger.debug(`从虎扑获取到 ${games.length} 场比赛`);
+      // 并行获取多天的比赛数据
+      const scoreboardPromises = dates.map(date => espnService.getScoreboard(date));
+      const scoreboards = await Promise.all(scoreboardPromises);
 
-      // 2. 过滤掉已结束的比赛（COMPLETED）
-      // 原因：Polymarket 对已结束的比赛不会有 active=true 的市场
-      // 避免无意义的 API 调用
-      const activeGames = games.filter((game: any) => {
-        const matchStatus = game.matchStatus || '';
-        return matchStatus !== 'COMPLETED';
+      // 合并所有比赛
+      const allGames: any[] = [];
+      scoreboards.forEach(scoreboard => {
+        if (scoreboard?.events) {
+          allGames.push(...scoreboard.events);
+        }
+      });
+
+      logger.debug(`从 ESPN 获取到 ${allGames.length} 场比赛`);
+
+      // 过滤掉已结束的比赛
+      const activeGames = allGames.filter((game: any) => {
+        const status = game.status?.type?.state;
+        return status !== 'post'; // ESPN 使用 'post' 表示已结束
       });
 
       logger.debug(`过滤后剩余 ${activeGames.length} 场进行中或未开始的比赛`);
 
-      // 3. 对每场比赛整合数据
+      // 对每场比赛整合数据
       for (const game of activeGames) {
         try {
           await this.updateMatch(game);
@@ -91,39 +107,39 @@ class DataAggregator {
   }
 
   /**
-   * 更新单场比赛数据（已优化：并行请求）
+   * 更新单场比赛数据（使用 ESPN 作为主数据源）
    */
-  private async updateMatch(hupuGame: any): Promise<void> {
-    const homeTeamName = hupuGame.homeTeamName || '';
-    const awayTeamName = hupuGame.awayTeamName || '';
+  private async updateMatch(espnGame: any): Promise<void> {
+    // 从 ESPN 数据中提取球队信息
+    const competition = espnGame.competitions?.[0];
+    const competitors = competition?.competitors || [];
+    const homeCompetitor = competitors.find((c: any) => c.homeAway === 'home');
+    const awayCompetitor = competitors.find((c: any) => c.homeAway === 'away');
+    
+    if (!homeCompetitor || !awayCompetitor) {
+      logger.warn(`比赛 ${espnGame.id} 缺少球队信息`);
+      return;
+    }
 
-    // 生成匹配ID
-    const matchId = this.generateMatchId(hupuGame);
+    const homeTeamName = homeCompetitor.team?.displayName || '';
+    const awayTeamName = awayCompetitor.team?.displayName || '';
+    const homeTeamId = homeCompetitor.team?.id || '';
+    const awayTeamId = awayCompetitor.team?.id || '';
+
+    // 生成匹配ID（使用 ESPN ID）
+    const matchId = `${awayTeamId}-${homeTeamId}-${espnGame.id}`;
 
     // 获取现有数据或创建新的
-    let match = this.matches.get(matchId) || this.createEmptyMatch(matchId, hupuGame);
+    let match = this.matches.get(matchId) || this.createEmptyMatchFromESPN(matchId, espnGame);
 
-    // ========== 性能优化：并行请求三个数据源 ==========
-    // 使用 Promise.allSettled 确保即使某个失败也不影响其他
-    // 预期性能提升：从 (265ms + 480ms + 500ms) 降低到 max(265ms, 480ms, 500ms) ≈ 500ms
-    const [hupuResult, espnResult, polyResult] = await Promise.allSettled([
-      hupuService.getGameByTeams(homeTeamName, awayTeamName),
-      espnService.getWinProbabilityByTeams(homeTeamName, awayTeamName),
-      polymarketService.searchNBAMarkets(homeTeamName, awayTeamName),
+    // 解析比赛状态和比分
+    this.parseESPNGameStatus(match, espnGame);
+
+    // ========== 并行请求详细数据 ==========
+    const [espnResult, polyResult] = await Promise.allSettled([
+      espnService.getGameWinProbability(espnGame.id),
+      this.searchPolymarketByESPNTeams(homeTeamName, awayTeamName),
     ]);
-
-    // 处理虎扑数据（比分）
-    if (hupuResult.status === 'fulfilled' && hupuResult.value) {
-      const hupuScore = hupuResult.value;
-      match.hupu = hupuScore;
-      match.status = hupuScore.status;
-      match.statusStr = `${hupuScore.quarter} ${hupuScore.timeRemaining}`;
-      match.homeTeam.score = hupuScore.homeScore;
-      match.awayTeam.score = hupuScore.awayScore;
-      match.dataCompleteness.hasHupuData = true;
-    } else if (hupuResult.status === 'rejected') {
-      logger.debug(`虎扑数据获取失败 [${matchId}]: ${hupuResult.reason}`);
-    }
 
     // 处理 ESPN 数据（胜率、伤病）
     if (espnResult.status === 'fulfilled' && espnResult.value) {
@@ -170,7 +186,7 @@ class DataAggregator {
       // 记录发现的套利机会
       if (match.signals.length > 0) {
         logger.info(`发现 ${match.signals.length} 个套利信号 [${matchId}]`);
-        match.signals.forEach(signal => {
+        match.signals.forEach((signal: any) => {
           logger.info(`  - ${signal.type}: ${signal.reason} (置信度: ${(signal.confidence * 100).toFixed(1)}%)`);
         });
       }
@@ -184,24 +200,29 @@ class DataAggregator {
   }
 
   /**
-   * 创建空的比赛对象
+   * 从 ESPN 数据创建比赛对象
    */
-  private createEmptyMatch(matchId: string, hupuGame: any): UnifiedMatch {
+  private createEmptyMatchFromESPN(matchId: string, espnGame: any): UnifiedMatch {
+    const competition = espnGame.competitions?.[0];
+    const competitors = competition?.competitors || [];
+    const homeCompetitor = competitors.find((c: any) => c.homeAway === 'home');
+    const awayCompetitor = competitors.find((c: any) => c.homeAway === 'away');
+
     return {
       id: matchId,
       homeTeam: {
-        id: hupuGame.homeTeamId || '',
-        name: hupuGame.homeTeamName || '',
-        score: 0,
+        id: homeCompetitor?.team?.id || '',
+        name: homeCompetitor?.team?.displayName || '',
+        score: parseInt(homeCompetitor?.score || '0'),
       },
       awayTeam: {
-        id: hupuGame.awayTeamId || '',
-        name: hupuGame.awayTeamName || '',
-        score: 0,
+        id: awayCompetitor?.team?.id || '',
+        name: awayCompetitor?.team?.displayName || '',
+        score: parseInt(awayCompetitor?.score || '0'),
       },
       status: MatchStatus.PRE,
-      statusStr: '未开始',
-      startTime: hupuGame.chinaStartTime || hupuGame.beginTime,
+      statusStr: espnGame.status?.type?.description || '未开始',
+      startTime: espnGame.date,
       poly: {
         marketId: '',
         homeTokenId: '',
@@ -233,15 +254,52 @@ class DataAggregator {
   }
 
   /**
-   * 生成匹配ID
+   * 解析 ESPN 比赛状态和比分
    */
-  private generateMatchId(hupuGame: any): string {
-    const homeTeam = hupuGame.homeTeamId || hupuGame.homeTeamName || '';
-    const awayTeam = hupuGame.awayTeamId || hupuGame.awayTeamName || '';
-    const startTime = hupuGame.chinaStartTime || hupuGame.beginTime || Date.now();
-    const date = new Date(startTime).toISOString().split('T')[0].replace(/-/g, '');
-    return `${homeTeam}-${awayTeam}-${date}`;
+  private parseESPNGameStatus(match: UnifiedMatch, espnGame: any): void {
+    const competition = espnGame.competitions?.[0];
+    const competitors = competition?.competitors || [];
+    const homeCompetitor = competitors.find((c: any) => c.homeAway === 'home');
+    const awayCompetitor = competitors.find((c: any) => c.homeAway === 'away');
+
+    // 更新比分
+    match.homeTeam.score = parseInt(homeCompetitor?.score || '0');
+    match.awayTeam.score = parseInt(awayCompetitor?.score || '0');
+
+    // 更新状态
+    const statusType = espnGame.status?.type?.state;
+    if (statusType === 'pre') {
+      match.status = MatchStatus.PRE;
+      match.statusStr = '未开始';
+    } else if (statusType === 'in') {
+      match.status = MatchStatus.LIVE;
+      const period = espnGame.status?.period || '';
+      const clock = espnGame.status?.displayClock || '';
+      match.statusStr = `Q${period} ${clock}`;
+    } else if (statusType === 'post') {
+      match.status = MatchStatus.FINAL;
+      match.statusStr = '已结束';
+    }
+
+    match.dataCompleteness.hasHupuData = true;
   }
+
+  /**
+   * 使用 ESPN 队名搜索 Polymarket
+   */
+  private async searchPolymarketByESPNTeams(homeTeamName: string, awayTeamName: string): Promise<any> {
+    // 将 ESPN 队名转换为虎扑中文名（用于 Polymarket 搜索）
+    const homeTeam = NBA_TEAMS.find(t => t.espnName === homeTeamName);
+    const awayTeam = NBA_TEAMS.find(t => t.espnName === awayTeamName);
+
+    if (!homeTeam || !awayTeam) {
+      logger.debug(`未找到队名映射: ${homeTeamName} vs ${awayTeamName}`);
+      return null;
+    }
+
+    return polymarketService.searchNBAMarkets(homeTeam.hupuName, awayTeam.hupuName);
+  }
+
 
   /**
    * 获取所有比赛

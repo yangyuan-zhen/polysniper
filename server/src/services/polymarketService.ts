@@ -20,6 +20,7 @@ class PolymarketService {
   private subscribedAssets: Set<string> = new Set(); // 已订阅的 asset_id
   private pendingSubscriptions: Set<string> = new Set(); // 待订阅的 asset_id
   private subscriptionTimer: NodeJS.Timeout | null = null; // 批量订阅定时器
+  private pingInterval: NodeJS.Timeout | null = null; // 心跳定时器
 
   constructor() {
     this.gammaApiUrl = config.polymarket.gammaApiUrl;
@@ -63,6 +64,9 @@ class PolymarketService {
         logger.info('✅ 已成功连接到 Polymarket WebSocket');
         this.reconnectAttempts = 0;
         
+        // 启动心跳定时器（每25秒发送一次ping，符合官方要求的20-30秒）
+        this.startHeartbeat();
+        
         // 连接成功后，订阅市场频道
         this.subscribeToMarketChannel();
       });
@@ -96,11 +100,44 @@ class PolymarketService {
 
       this.ws.on('close', (code, reason) => {
         logger.warn(`⚠️ WebSocket 连接已关闭 - Code: ${code}, Reason: ${reason || '无'}`);
+        this.stopHeartbeat();
         this.reconnect();
       });
     } catch (error) {
       logger.error('❌ 连接 Polymarket WebSocket 失败:', error);
       this.reconnect();
+    }
+  }
+
+  /**
+   * 启动心跳定时器
+   */
+  private startHeartbeat(): void {
+    // 清理旧的心跳定时器
+    this.stopHeartbeat();
+    
+    this.pingInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.send(JSON.stringify({ type: 'ping' }));
+          logger.debug('💓 发送心跳 Ping');
+        } catch (error) {
+          logger.error('心跳发送失败:', error);
+        }
+      }
+    }, 25000); // 25秒，符合官方要求的20-30秒
+    
+    logger.info('💓 心跳定时器已启动（每25秒）');
+  }
+
+  /**
+   * 停止心跳定时器
+   */
+  private stopHeartbeat(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+      logger.debug('心跳定时器已停止');
     }
   }
 
@@ -672,6 +709,7 @@ class PolymarketService {
    * 断开 WebSocket 连接
    */
   disconnect(): void {
+    this.stopHeartbeat(); // 停止心跳定时器
     if (this.ws) {
       this.ws.close();
       this.ws = null;

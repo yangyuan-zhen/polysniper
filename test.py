@@ -2,6 +2,8 @@ import websocket
 import json
 import requests
 import ast
+import threading
+import time
 
 # 获取当前活跃的市场
 print("🔍 获取活跃市场...")
@@ -50,8 +52,25 @@ def on_error(ws, error):
 def on_close(ws, close_status_code, close_msg):
     print(f"⚠️ 连接已关闭 - Code: {close_status_code}, Msg: {close_msg}")
 
+def heartbeat(ws):
+    """心跳线程：每25秒发送一次ping保持连接"""
+    while True:
+        time.sleep(25)
+        try:
+            if ws.sock and ws.sock.connected:
+                ws.send(json.dumps({"type": "ping"}))
+                print("💓 发送心跳 Ping")
+        except Exception as e:
+            print(f"❌ 心跳发送失败: {e}")
+            break
+
 def on_open(ws):
     print("✅ 已连接到 WebSocket！")
+    
+    # 启动心跳线程（每25秒一次，符合官方要求的20-30秒）
+    heartbeat_thread = threading.Thread(target=heartbeat, args=(ws,), daemon=True)
+    heartbeat_thread.start()
+    print("💓 心跳线程已启动（每25秒）")
     
     # 使用活跃市场的 token（取前5个）
     tokens_to_subscribe = active_tokens[:5] if active_tokens else []

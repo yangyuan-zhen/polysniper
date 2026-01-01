@@ -64,7 +64,7 @@ class PolymarketService {
         logger.info('✅ 已成功连接到 Polymarket WebSocket');
         this.reconnectAttempts = 0;
         
-        // 启动心跳定时器（每15秒发送一次ping，CLOB建议10-20秒）
+        // 启动心跳定时器（每15秒发送 WebSocket 协议层 Ping 帧）
         this.startHeartbeat();
         
         // 连接成功后，订阅市场频道
@@ -87,6 +87,10 @@ class PolymarketService {
         } catch (error) {
           logger.error('Failed to parse WebSocket message:', error);
         }
+      });
+
+      this.ws.on('pong', () => {
+        logger.debug('💚 收到 WebSocket Pong 响应');
       });
 
       this.ws.on('error', (error) => {
@@ -119,15 +123,16 @@ class PolymarketService {
     this.pingInterval = setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         try {
-          this.ws.send(JSON.stringify({ type: 'ping' }));
-          logger.debug('💓 发送心跳 Ping');
+          // 使用 WebSocket 协议层的 ping() 方法，而不是发送 JSON 消息
+          this.ws.ping();
+          logger.debug('💓 发送 WebSocket Ping 帧');
         } catch (error) {
           logger.error('心跳发送失败:', error);
         }
       }
-    }, 15000); // 15秒，CLOB建议10-20秒，更保守
+    }, 15000); // 15秒，CLOB建议10-20秒
     
-    logger.info('💓 心跳定时器已启动（每15秒）');
+    logger.info('💓 WebSocket Ping 心跳已启动（每15秒）');
   }
 
   /**

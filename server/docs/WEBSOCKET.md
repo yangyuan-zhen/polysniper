@@ -1,5 +1,12 @@
 # Polymarket WebSocket 实时价格推送
 
+> **🔔 重要说明**  
+> - **公共数据访问**（市场列表、价格、订单簿）：使用 **Gamma API (REST)**，**无需 API Key 或私钥** ✅  
+> - **WebSocket 实时推送**：需要 **API Key 认证**（CLOB WebSocket 要求认证）  
+> - **交易功能**：需要 **API Key + 钱包私钥**（当前项目不涉及）  
+>  
+> 💡 **当前项目**：使用 Gamma API 轮询获取价格数据，无需配置 API Key
+
 ## 📡 功能说明
 
 WebSocket 用于**实时获取 Polymarket 市场价格更新**，相比 REST API 轮询有以下优势：

@@ -1,6 +1,12 @@
 # 🎯 PolySniper
 
-NBA 预测市场实时监控系统 - 整合 Polymarket 和 ESPN 数据，提供套利信号分析
+**NBA 赛事套利监控平台** - 实时监控 ESPN 赔率与 Polymarket 预测市场，自动发现套利机会
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19-61dafb)](https://reactjs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
+
+> 📖 **详细文档**: [PROJECT_SUMMARY.md](./PROJECT_SUMMARY.md) | [ARCHITECTURE.md](./ARCHITECTURE.md)
 
 ## 📁 项目结构
 
@@ -81,20 +87,27 @@ npm start
 
 详细 API 文档：[server/API.md](./server/API.md)
 
-## 🎨 功能特性
+## ✨ 核心功能
 
-- ✅ **实时数据更新** - WebSocket 每 3 秒推送最新数据
-- ✅ **多数据源整合** - ESPN + Polymarket
-- ✅ **套利信号分析** - 自动计算价格差异和套利机会
-- ✅ **响应式设计** - 适配桌面和移动设备
-- ✅ **数据可视化** - 实时图表展示价格走势
-- ✅ **智能匹配** - 自动匹配不同平台的球队名称
+- ⚡ **毫秒级实时更新** - WebSocket 推送，价格延迟 < 1秒
+- 🔄 **多源数据整合** - ESPN 赔率 + Polymarket 预测市场
+- 💰 **自动套利检测** - 实时计算价格差异和潜在收益
+- 🏥 **伤病信息追踪** - 实时显示球员伤病状态
+- 📊 **数据可视化** - 实时图表展示价格走势
+- 🎯 **智能匹配** - 三层漏斗精准匹配球队和市场
 
-## 📊 数据更新频率
+## 📊 数据更新机制
 
-- **后台采集**: 每 5 秒刷新
-- **WebSocket 推送**: 每 3 秒
-- **前端轮询**: 按需（主要使用 WebSocket）
+### Polymarket 价格
+- **WebSocket 实时推送** ⚡ 
+- 延迟 < 1秒
+- 无需轮询，服务器主动推送
+
+### ESPN 比赛信息
+- **动态轮询频率**:
+  - 🔴 进行中: 2秒/次（实时监控）
+  - 🟡 未开始: 5秒/次（等待开赛）
+  - 🟢 已结束: 30秒/次（等待结算）
 
 ## 🔐 环境配置
 
@@ -105,18 +118,19 @@ npm start
 PORT=3000
 NODE_ENV=development
 
+# Polymarket WebSocket 代理（⚠️ 必需！）
+POLYMARKET_WS_PROXY=http://127.0.0.1:7890
+POLYMARKET_WS_ENABLED=true
+POLYMARKET_WS_URL=wss://ws-subscriptions-clob.polymarket.com/ws/market
+
 # CORS
 CORS_ORIGIN=*
 
-# 限流
-RATE_LIMIT_WINDOW_MS=60000
-RATE_LIMIT_MAX_REQUESTS=100
-
 # Redis (可选)
 REDIS_ENABLED=false
-REDIS_HOST=localhost
-REDIS_PORT=6379
 ```
+
+> ⚠️ **重要**: Polymarket API 需要代理访问（国内网络环境）
 
 ## 📝 开发指南
 
@@ -149,16 +163,24 @@ npm run start:pm2
 docker-compose up -d
 ```
 
-## ⚠️ 注意事项
+## ⚠️ 重要注意事项
 
+1. **代理必需** 🌐
+   - Polymarket API 需要代理访问
+   - 配置 `POLYMARKET_WS_PROXY` 环境变量
 
-1. **数据延迟**
-   - ESPN 数据: ~5-10 秒延迟
-   - Polymarket: 实时（区块链确认时间）
+2. **WebSocket 订阅限制** 📡
+   - 单次订阅最多 10 个 tokens
+   - 批次间隔 100ms
+   - 避免 `INVALID OPERATION` 错误
 
-2. **限流保护**
-   - API 请求限制: 100 次/分钟
-   - WebSocket 连接无限制
+3. **队名特殊处理** 🏀
+   - Thunder 队名包含 "under"
+   - 需要特殊逻辑避免误排除
+
+4. **数据延迟** ⏱️
+   - Polymarket WebSocket: < 1秒
+   - ESPN 轮询: 2-30秒（动态调整）
 
 ## 🤝 贡献
 
@@ -171,7 +193,9 @@ ISC License
 ## 📞 联系方式
 yhrsc30@gmail.com
 
-如有问题，请查看：
-- [后端 API 文档](./server/API.md)
-- [开发文档](./server/docs/DEVELOPMENT.md)
-- [WebSocket 说明](./server/docs/WEBSOCKET.md)
+## 📚 文档索引
+
+- 📋 [项目总结](./PROJECT_SUMMARY.md) - 完整的技术文档
+- 🏗️ [架构设计](./ARCHITECTURE.md) - 系统架构和设计决策
+- 📊 [数据流程](./DATA_UPDATE_FLOW.md) - 数据更新流程详解
+- 📝 [变更日志](./CHANGELOG.md) - 版本更新记录

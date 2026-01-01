@@ -1,5 +1,6 @@
 import axios from 'axios';
 import WebSocket from 'ws';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { cache } from '../utils/cache';
@@ -16,6 +17,9 @@ class PolymarketService {
   private maxReconnectAttempts = 10;
   private reconnectDelay = 1000;
   private subscribers: Map<string, Set<(data: any) => void>> = new Map();
+  private subscribedAssets: Set<string> = new Set(); // 已订阅的 asset_id
+  private pendingSubscriptions: Set<string> = new Set(); // 待订阅的 asset_id
+  private subscriptionTimer: NodeJS.Timeout | null = null; // 批量订阅定时器
 
   constructor() {
     this.gammaApiUrl = config.polymarket.gammaApiUrl;
@@ -27,25 +31,36 @@ class PolymarketService {
 
   /**
    * 连接 Polymarket WebSocket
+   * market channel 是公开频道，无需认证
+   * 只要不订阅 user 频道，就不需要 API Key
    */
   async connectWebSocket(): Promise<void> {
     try {
+      logger.info('🔗 正在连接 Polymarket WebSocket...');
+      logger.info(`   URL: ${this.wsUrl}`);
+      logger.info(`   模式: 公开 market channel，匿名订阅（无需认证）`);
+      
+      // 配置代理（如果需要）
       const options: any = {};
       
-      // 如果有 API Key，添加认证头
-      if (this.apiKey) {
-        options.headers = {
-          'Authorization': `Bearer ${this.apiKey}`,
-        };
-        logger.info('连接 Polymarket WebSocket (使用 API Key)');
+      const proxy = config.polymarket.wsProxy;
+      
+      if (proxy && proxy !== 'none') {
+        logger.info(`   使用代理: ${proxy}`);
+        try {
+          options.agent = new HttpsProxyAgent(proxy);
+        } catch (error) {
+          logger.warn(`   代理配置失败: ${error}`);
+        }
       } else {
-        logger.info('连接 Polymarket WebSocket (无 API Key)');
+        logger.info(`   直接连接（无代理）`);
       }
-
+      
+      // 连接 WebSocket
       this.ws = new WebSocket(this.wsUrl, options);
 
       this.ws.on('open', () => {
-        logger.info('已连接到 Polymarket WebSocket');
+        logger.info('✅ 已成功连接到 Polymarket WebSocket');
         this.reconnectAttempts = 0;
         
         // 连接成功后，订阅市场频道
@@ -54,7 +69,16 @@ class PolymarketService {
 
       this.ws.on('message', (data: WebSocket.Data) => {
         try {
-          const message = JSON.parse(data.toString());
+          const rawMessage = data.toString();
+          logger.debug(`📥 原始消息: ${rawMessage.slice(0, 200)}`);
+          
+          // 处理非 JSON 消息（如 "INVALID OPERATION"）
+          if (!rawMessage.startsWith('{') && !rawMessage.startsWith('[')) {
+            logger.warn(`⚠️ 收到非 JSON 消息: ${rawMessage}`);
+            return;
+          }
+          
+          const message = JSON.parse(rawMessage);
           this.handleMessage(message);
         } catch (error) {
           logger.error('Failed to parse WebSocket message:', error);
@@ -62,15 +86,20 @@ class PolymarketService {
       });
 
       this.ws.on('error', (error) => {
-        logger.error('WebSocket 错误:', error);
+        logger.error('❌ WebSocket 错误:', error);
+        logger.error('   错误详情:', {
+          message: error.message,
+          code: (error as any).code,
+          type: error.constructor.name,
+        });
       });
 
-      this.ws.on('close', () => {
-        logger.warn('WebSocket 连接已关闭');
+      this.ws.on('close', (code, reason) => {
+        logger.warn(`⚠️ WebSocket 连接已关闭 - Code: ${code}, Reason: ${reason || '无'}`);
         this.reconnect();
       });
     } catch (error) {
-      logger.error('连接 Polymarket WebSocket 失败:', error);
+      logger.error('❌ 连接 Polymarket WebSocket 失败:', error);
       this.reconnect();
     }
   }
@@ -111,69 +140,55 @@ class PolymarketService {
    */
   private handleMessage(message: any): void {
     try {
-      // 记录原始消息（调试用）
-      logger.debug(`收到 WS 消息:`, JSON.stringify(message).slice(0, 200));
-      
-      // CLOB WebSocket 消息格式
-      const { event_type, asset_id, market, price, bids, asks } = message;
-      
-      // 处理订单簿更新 (book)
-      if (event_type === 'book' && asset_id) {
-        // 计算中间价格
-        const bestBid = bids?.[0]?.price ? parseFloat(bids[0].price) : 0;
-        const bestAsk = asks?.[0]?.price ? parseFloat(asks[0].price) : 0;
-        const midPrice = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : (bestBid || bestAsk);
-        
-        if (midPrice > 0) {
-          logger.info(`💰 订单簿价格 [${asset_id.slice(0, 8)}...]: $${midPrice.toFixed(4)} (买:${bestBid.toFixed(4)}, 卖:${bestAsk.toFixed(4)})`);
-          
-          // 通知订阅者
-          const callbacks = this.subscribers.get(asset_id);
-          if (callbacks && callbacks.size > 0) {
-            logger.debug(`通知 ${callbacks.size} 个订阅者`);
-            callbacks.forEach(callback => callback({
-              asset_id,
-              market,
-              price: midPrice,
-              bestBid,
-              bestAsk,
-              bids,
-              asks,
-            }));
-          } else {
-            logger.warn(`⚠️ 没有订阅者: ${asset_id.slice(0, 8)}...`);
-          }
-          
-          // 更新缓存
-          this.updatePriceCache(asset_id, midPrice);
-        }
+      // 处理数组消息（初始订单簿快照）
+      if (Array.isArray(message)) {
+        logger.info(`📦 收到初始数据快照: ${message.length} 个市场`);
+        message.forEach(item => this.handleSingleMessage(item));
+        return;
       }
       
-      // 处理价格变化消息 (price_change)
-      else if (event_type === 'price_change' && asset_id && price) {
-        const priceValue = typeof price === 'string' ? parseFloat(price) : price;
-        
-        logger.info(`💰 价格变化 [${asset_id.slice(0, 8)}...]: $${priceValue.toFixed(4)}`);
-        
-        // 通知订阅者
-        const callbacks = this.subscribers.get(asset_id);
-        if (callbacks && callbacks.size > 0) {
-          callbacks.forEach(callback => callback({
-            asset_id,
-            price: priceValue,
-          }));
-        }
-        
-        // 更新缓存
-        this.updatePriceCache(asset_id, priceValue);
-      }
-      
-      // 其他消息类型（可能是确认消息等）
-      else {
-        logger.debug(`其他消息类型: ${event_type || message.type || 'unknown'}`);
-      }
+      // 处理单个消息
+      this.handleSingleMessage(message);
     } catch (error) {
       logger.error('处理 WebSocket 消息失败:', error);
+    }
+  }
+
+  /**
+   * 处理单个消息
+   */
+  private handleSingleMessage(message: any): void {
+    const event_type = message.event_type || message.type;
+    
+    // 订单簿快照（book）
+    if (event_type === 'book' && message.asset_id) {
+      const asset_id = message.asset_id;
+      const price = message.last_trade_price;
+      
+      if (price) {
+        const priceValue = parseFloat(price);
+        logger.info(`📖 订单簿 [${asset_id.slice(0, 8)}...]: $${priceValue.toFixed(4)}`);
+        this.updatePriceCache(asset_id, priceValue);
+      }
+    }
+    
+    // 价格变化事件（price_change）
+    else if (event_type === 'price_change' && message.price_changes) {
+      message.price_changes.forEach((change: any) => {
+        const asset_id = change.asset_id;
+        const price = change.price;
+        
+        if (asset_id && price) {
+          const priceValue = parseFloat(price);
+          logger.info(`📈 价格更新 [${asset_id.slice(0, 8)}...]: $${priceValue.toFixed(4)} (${change.side})`);
+          this.updatePriceCache(asset_id, priceValue);
+        }
+      });
+    }
+    
+    // 其他消息类型
+    else if (event_type) {
+      logger.debug(`其他消息: ${event_type}`);
     }
   }
 
@@ -188,18 +203,81 @@ class PolymarketService {
     }
     this.subscribers.get(assetId)!.add(callback);
 
-    // 发送订阅消息到 WebSocket（CLOB API 格式）
+    // 检查是否已经订阅过这个 asset
+    if (this.subscribedAssets.has(assetId)) {
+      logger.debug(`⏭️ 已订阅过 ${assetId.slice(0, 8)}...，跳过`);
+      return;
+    }
+
+    // 添加到待订阅列表
+    this.pendingSubscriptions.add(assetId);
+    
+    // 清除之前的定时器
+    if (this.subscriptionTimer) {
+      clearTimeout(this.subscriptionTimer);
+    }
+    
+    // 设置批量订阅定时器（500ms 后发送）
+    this.subscriptionTimer = setTimeout(() => {
+      this.flushSubscriptions();
+    }, 500);
+  }
+
+  /**
+   * 批量发送订阅请求
+   */
+  private flushSubscriptions(): void {
+    if (this.pendingSubscriptions.size === 0) {
+      return;
+    }
+
+    // 发送订阅消息到 WebSocket（批量订阅）
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const subscribeMessage = {
-        auth: {},
-        type: 'subscribe',
-        channel: 'book',
-        asset_id: assetId,
-      };
-      this.ws.send(JSON.stringify(subscribeMessage));
-      logger.info(`📡 订阅 token 价格: ${assetId.slice(0, 8)}...`);
+      const assetsToSubscribe = Array.from(this.pendingSubscriptions);
+      
+      // 🔧 分批订阅，每批最多 10 个 tokens（避免服务器拒绝）
+      const BATCH_SIZE = 10;
+      const batches: string[][] = [];
+      
+      for (let i = 0; i < assetsToSubscribe.length; i += BATCH_SIZE) {
+        batches.push(assetsToSubscribe.slice(i, i + BATCH_SIZE));
+      }
+      
+      logger.info(`📡 批量订阅 ${assetsToSubscribe.length} 个市场 (分 ${batches.length} 批)`);
+      
+      // 依次发送每一批
+      batches.forEach((batch, batchIndex) => {
+        const subscribeMessage = {
+          type: 'market',
+          assets_ids: batch,
+          initial_dump: true
+        };
+        
+        const messageString = JSON.stringify(subscribeMessage);
+        
+        logger.info(`   📦 批次 ${batchIndex + 1}/${batches.length}: ${batch.length} 个 tokens`);
+        batch.slice(0, 3).forEach((assetId, index) => {
+          logger.debug(`      Token ${index + 1}: ${assetId.slice(0, 16)}...`);
+        });
+        
+        // 延迟发送每一批（避免过快）
+        setTimeout(() => {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(messageString);
+            logger.debug(`   ✅ 批次 ${batchIndex + 1} 已发送`);
+          }
+        }, batchIndex * 100); // 每批间隔 100ms
+        
+        // 标记为已订阅
+        batch.forEach(assetId => {
+          this.subscribedAssets.add(assetId);
+        });
+      });
+      
+      // 清空待订阅列表
+      this.pendingSubscriptions.clear();
     } else {
-      logger.warn(`⚠️ WebSocket 未连接，无法订阅: ${assetId.slice(0, 8)}...`);
+      logger.warn(`⚠️ WebSocket 未连接，无法订阅 ${this.pendingSubscriptions.size} 个市场`);
     }
   }
 
@@ -293,6 +371,8 @@ class PolymarketService {
 
   /**
    * 获取 token 价格
+   * @deprecated 已弃用 - 现在使用 WebSocket 实时推送价格，不再使用 REST API 轮询
+   * 保留此方法作为备用方案（WebSocket 连接失败时的降级方案）
    */
   async getTokenPrice(tokenId: string): Promise<number> {
     try {
@@ -404,17 +484,23 @@ class PolymarketService {
         const matchedHome = homeKeywords.some(kw => title.includes(kw) || slug.includes(kw));
         const matchedAway = awayKeywords.some(kw => title.includes(kw) || slug.includes(kw));
         
+        // 调试：如果是勇士或雷霆相关的比赛，打印详细信息
+        const isTargetMatch = (title.includes('warriors') || title.includes('thunder')) && 
+                             (homeKeywords.some(k => k.includes('warriors') || k.includes('thunder')) || 
+                              awayKeywords.some(k => k.includes('warriors') || k.includes('thunder')));
+        
+        if (isTargetMatch) {
+          logger.debug(`[DEBUG] 勇士/雷霆比赛检查:`);
+          logger.debug(`  Title: "${e.title}"`);
+          logger.debug(`  HomeKW: ${JSON.stringify(homeKeywords)} -> Matched: ${matchedHome}`);
+          logger.debug(`  AwayKW: ${JSON.stringify(awayKeywords)} -> Matched: ${matchedAway}`);
+          logger.debug(`  Markets: ${e.markets?.length || 0} 个`);
+        }
+        
         // 【核心】只有同时匹配两个队才返回 true（不区分主客场）
         if (matchedHome && matchedAway) {
           logger.info(`[Layer 2] ✅ 名称匹配成功: "${e.title}"`);
           return true;
-        }
-        
-        // 调试：如果包含任意一个关键词，打印出来看看为什么没全匹配
-        if (title.includes('celtics') && title.includes('pistons')) {
-          logger.warn(`DEBUG: 发现目标比赛但未匹配成功! Title: "${title}"`);
-          logger.warn(`  HomeKW: ${JSON.stringify(homeKeywords)} -> Matched: ${matchedHome}`);
-          logger.warn(`  AwayKW: ${JSON.stringify(awayKeywords)} -> Matched: ${matchedAway}`);
         }
         
         return false;
@@ -422,9 +508,11 @@ class PolymarketService {
 
       if (!event) {
         if (nbaEvents.length > 0) {
-          logger.debug(`未找到 ${homeTeam} vs ${awayTeam} 的匹配 event，但找到 ${nbaEvents.length} 个其他 NBA events`);
-          nbaEvents.slice(0, 3).forEach((e: any) => {
-            logger.debug(`  - ${e.title}`);
+          logger.warn(`❌ 未找到 ${homeTeam} vs ${awayTeam} 的匹配 event，但找到 ${nbaEvents.length} 个其他 NBA events`);
+          logger.debug(`搜索关键词: [${homeTeamMapping.polymarketName}/${homeTeamMapping.abbr}] vs [${awayTeamMapping.polymarketName}/${awayTeamMapping.abbr}]`);
+          logger.debug(`可用的 NBA events (前 10 个):`);
+          nbaEvents.slice(0, 10).forEach((e: any) => {
+            logger.debug(`  - ${e.title} (${e.markets?.length || 0} markets, active: ${e.active}, closed: ${e.closed})`);
           });
         } else {
           logger.debug(`未找到 ${homeTeam} vs ${awayTeam} 的匹配 event，当前无开放的 NBA events`);
@@ -443,23 +531,31 @@ class PolymarketService {
       
       logger.debug(`Event 包含 ${markets.length} 个 markets，开始筛选 Winner 市场`);
       
+      // 先打印所有 markets
+      markets.forEach((m: any, index: number) => {
+        logger.debug(`  Market ${index + 1}: "${m.question || m.groupItemTitle}"`);
+      });
+      
       // 筛选逻辑：排除让分盘、大小分、单节、上半场等
       const winnerMarket = markets.find((m: any) => {
         const question = (m.question || m.groupItemTitle || '').toLowerCase();
+        logger.debug(`  检查市场: "${question}"`);
         
         // 排除条件：包含这些关键词的不是整场胜负盘
         const excludeKeywords = [
           'spread', 'handicap', 'points', // 让分盘
-          'total', 'over', 'under', 'o/u', // 大小分
+          'total', 'over', 'o/u', // 大小分
           'quarter', '1q', '2q', '3q', '4q', 'q1', 'q2', 'q3', 'q4', // 单节
           'half', '1h', '2h', 'first half', 'second half', // 半场
           'more than', 'less than', 'by more', 'beat by', // 让分描述
         ];
         
-        const hasExclude = excludeKeywords.some(kw => question.includes(kw));
+        // 特殊处理：'under' 需要避免误匹配 'thunder'
+        const hasUnder = question.includes('under') && !question.includes('thunder');
+        const matchedExclude = excludeKeywords.find(kw => question.includes(kw)) || (hasUnder ? 'under' : null);
         
-        if (hasExclude) {
-          logger.debug(`  排除: ${question}`);
+        if (matchedExclude) {
+          logger.debug(`  ❌ 排除: "${question}" (匹配关键词: "${matchedExclude}")`);
           return false;
         }
         
@@ -468,7 +564,7 @@ class PolymarketService {
         const hasInclude = includeKeywords.some(kw => question.includes(kw));
         
         // 或者：问题就是球队名组合（如 "Celtics vs. Pistons"）
-        const isSimpleVs = question.includes('vs') && !hasExclude;
+        const isSimpleVs = question.includes('vs') && !matchedExclude;
         
         if (hasInclude || isSimpleVs) {
           logger.debug(`  ✅ Winner 市场: ${question}`);

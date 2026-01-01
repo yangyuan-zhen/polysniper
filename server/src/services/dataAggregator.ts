@@ -23,10 +23,13 @@ class DataAggregator {
     logger.info('正在启动数据聚合器...');
 
     // 初始化 Polymarket WebSocket（如果启用）
+    logger.info(`🔍 WebSocket 配置: wsEnabled=${config.polymarket.wsEnabled}, wsUrl=${config.polymarket.wsUrl}`);
+    
     if (config.polymarket.wsEnabled) {
+      logger.info('🚀 启动 Polymarket WebSocket 连接...');
       await polymarketService.connectWebSocket();
     } else {
-      logger.info('Polymarket WebSocket 已禁用，仅使用 REST API');
+      logger.info('⚠️ Polymarket WebSocket 已禁用，仅使用 REST API');
     }
 
     // 首次加载数据

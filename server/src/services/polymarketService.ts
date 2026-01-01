@@ -64,7 +64,7 @@ class PolymarketService {
         logger.info('✅ 已成功连接到 Polymarket WebSocket');
         this.reconnectAttempts = 0;
         
-        // 启动心跳定时器（每25秒发送一次ping，符合官方要求的20-30秒）
+        // 启动心跳定时器（每15秒发送一次ping，CLOB建议10-20秒）
         this.startHeartbeat();
         
         // 连接成功后，订阅市场频道
@@ -125,9 +125,9 @@ class PolymarketService {
           logger.error('心跳发送失败:', error);
         }
       }
-    }, 25000); // 25秒，符合官方要求的20-30秒
+    }, 15000); // 15秒，CLOB建议10-20秒，更保守
     
-    logger.info('💓 心跳定时器已启动（每25秒）');
+    logger.info('💓 心跳定时器已启动（每15秒）');
   }
 
   /**

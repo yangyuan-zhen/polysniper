@@ -53,9 +53,9 @@ def on_close(ws, close_status_code, close_msg):
     print(f"⚠️ 连接已关闭 - Code: {close_status_code}, Msg: {close_msg}")
 
 def heartbeat(ws):
-    """心跳线程：每25秒发送一次ping保持连接"""
+    """心跳线程：每15秒发送一次ping保持连接（CLOB建议10-20秒）"""
     while True:
-        time.sleep(25)
+        time.sleep(15)
         try:
             if ws.sock and ws.sock.connected:
                 ws.send(json.dumps({"type": "ping"}))
@@ -67,10 +67,10 @@ def heartbeat(ws):
 def on_open(ws):
     print("✅ 已连接到 WebSocket！")
     
-    # 启动心跳线程（每25秒一次，符合官方要求的20-30秒）
+    # 启动心跳线程（每15秒一次，CLOB建议10-20秒）
     heartbeat_thread = threading.Thread(target=heartbeat, args=(ws,), daemon=True)
     heartbeat_thread.start()
-    print("💓 心跳线程已启动（每25秒）")
+    print("💓 心跳线程已启动（每15秒）")
     
     # 使用活跃市场的 token（取前5个）
     tokens_to_subscribe = active_tokens[:5] if active_tokens else []

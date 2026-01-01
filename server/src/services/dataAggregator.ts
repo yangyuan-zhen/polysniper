@@ -13,6 +13,8 @@ import { NBA_TEAMS } from '../config/teamMappings';
 class DataAggregator {
   private matches: Map<string, UnifiedMatch> = new Map();
   private updateInterval: NodeJS.Timeout | null = null;
+  private hasLiveMatches: boolean = false;
+  private subscribedMarkets: Set<string> = new Set(); // 跟踪已订阅的市场
 
   /**
    * 启动数据采集
@@ -30,14 +32,44 @@ class DataAggregator {
     // 首次加载数据
     await this.updateAllMatches();
 
-    // 定时更新（每5秒）
-    this.updateInterval = setInterval(() => {
-      this.updateAllMatches().catch(err => {
-        logger.error('更新比赛数据失败:', err);
-      });
-    }, 5000);
+    // 启动动态更新循环
+    this.startDynamicUpdate();
 
-    logger.info('数据聚合器已启动');
+    logger.info('数据聚合器已启动（动态更新频率）');
+  }
+
+  /**
+   * 启动动态更新循环
+   */
+  private startDynamicUpdate(): void {
+    const update = async () => {
+      try {
+        await this.updateAllMatches();
+        
+        // 🎯 价格实时更新优化：
+        // 为了保证 Polymarket 价格及时更新，所有比赛统一使用2秒更新频率
+        // 这样价格变化延迟可以从 6-13秒 缩短到 6-10秒
+        const interval = 2000; // 固定2秒
+        
+        // 旧逻辑（可选）：
+        // const interval = this.hasLiveMatches ? 2000 : 5000;
+        
+        this.updateInterval = setTimeout(update, interval);
+        
+        // 显示当前状态
+        if (this.hasLiveMatches) {
+          logger.debug(`🔴 进行中比赛，更新频率: 2秒`);
+        } else {
+          logger.debug(`💰 关注价格变化，更新频率: 2秒`);
+        }
+      } catch (err) {
+        logger.error('更新比赛数据失败:', err);
+        // 出错后2秒重试（保持一致）
+        this.updateInterval = setTimeout(update, 2000);
+      }
+    };
+    
+    update();
   }
 
   /**
@@ -45,7 +77,7 @@ class DataAggregator {
    */
   stop(): void {
     if (this.updateInterval) {
-      clearInterval(this.updateInterval);
+      clearTimeout(this.updateInterval);
       this.updateInterval = null;
     }
 
@@ -61,14 +93,25 @@ class DataAggregator {
   private async updateAllMatches(): Promise<void> {
     try {
       // 获取未来3天的比赛数据
-      const today = new Date();
+      // 注意：ESPN API 使用美国时区，比中国时间晚约12-16小时
+      // 美国25号晚上的比赛 = 中国26号早上
+      // 因此需要查询前一天到后一天的数据，确保覆盖所有中国时间的比赛
+      const getESPNDate = (daysOffset: number = 0): string => {
+        const now = new Date();
+        // 转换为中国时间（UTC+8）
+        const chinaTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+        // 提前一天查询，因为 ESPN 使用美国时区
+        chinaTime.setUTCDate(chinaTime.getUTCDate() + daysOffset - 1);
+        const year = chinaTime.getUTCFullYear();
+        const month = String(chinaTime.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(chinaTime.getUTCDate()).padStart(2, '0');
+        return `${year}${month}${day}`;
+      };
+
       const dates: string[] = [];
-      
-      for (let i = 0; i < 3; i++) {
-        const date = new Date(today);
-        date.setDate(date.getDate() + i);
-        const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
-        dates.push(dateStr);
+      // 查询4天的数据（昨天到后天），确保覆盖中国时间今天到后天的所有比赛
+      for (let i = 0; i < 4; i++) {
+        dates.push(getESPNDate(i));
       }
 
       // 并行获取多天的比赛数据
@@ -83,7 +126,18 @@ class DataAggregator {
         }
       });
 
-      logger.debug(`从 ESPN 获取到 ${allGames.length} 场比赛`);
+      logger.info(`📅 查询日期: ${dates.join(', ')}`);
+      logger.info(`📊 从 ESPN 获取到 ${allGames.length} 场比赛`);
+
+      // 记录每场比赛的状态和日期
+      allGames.forEach((game: any) => {
+        const competition = game.competitions?.[0];
+        const homeTeam = competition?.competitors?.find((c: any) => c.homeAway === 'home')?.team?.displayName;
+        const awayTeam = competition?.competitors?.find((c: any) => c.homeAway === 'away')?.team?.displayName;
+        const status = game.status?.type?.state;
+        const gameDate = new Date(game.date).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+        logger.debug(`  ${homeTeam} vs ${awayTeam} - 状态: ${status} - 时间: ${gameDate}`);
+      });
 
       // 过滤掉已结束的比赛
       const activeGames = allGames.filter((game: any) => {
@@ -91,7 +145,15 @@ class DataAggregator {
         return status !== 'post'; // ESPN 使用 'post' 表示已结束
       });
 
-      logger.debug(`过滤后剩余 ${activeGames.length} 场进行中或未开始的比赛`);
+      // 检测是否有进行中的比赛
+      const liveGames = activeGames.filter((game: any) => game.status?.type?.state === 'in');
+      this.hasLiveMatches = liveGames.length > 0;
+
+      if (this.hasLiveMatches) {
+        logger.info(`🔴 ${liveGames.length} 场比赛进行中，更新频率: 2秒`);
+      } else {
+        logger.info(`⚪ ${activeGames.length} 场比赛未开始，更新频率: 5秒`);
+      }
 
       // 对每场比赛整合数据
       for (const game of activeGames) {
@@ -172,8 +234,31 @@ class DataAggregator {
       }
       
       if (timeValid) {
+        // 检测价格变化并记录日志
+        const oldPoly = match.poly;
+        if (oldPoly && oldPoly.homePrice && oldPoly.awayPrice) {
+          const homePriceChange = Math.abs(polyData.homePrice - oldPoly.homePrice);
+          const awayPriceChange = Math.abs(polyData.awayPrice - oldPoly.awayPrice);
+          
+          // 价格变化超过1美分时记录
+          if (homePriceChange > 0.01 || awayPriceChange > 0.01) {
+            logger.info(`💰 价格变化 [${homeTeamName} vs ${awayTeamName}]`);
+            if (homePriceChange > 0.01) {
+              logger.info(`   ${homeTeamName}: $${oldPoly.homePrice.toFixed(2)} → $${polyData.homePrice.toFixed(2)}`);
+            }
+            if (awayPriceChange > 0.01) {
+              logger.info(`   ${awayTeamName}: $${oldPoly.awayPrice.toFixed(2)} → $${polyData.awayPrice.toFixed(2)}`);
+            }
+          }
+        }
+        
         match.poly = polyData;
         match.dataCompleteness.hasPolyData = true;
+        
+        // 🎯 订阅 WebSocket 实时价格更新
+        if (config.polymarket.wsEnabled && polyData.marketId) {
+          this.subscribeToMarketPrice(matchId, polyData.marketId, polyData.homeTokenId, polyData.awayTokenId);
+        }
       }
     } else if (polyResult.status === 'rejected') {
       logger.debug(`Polymarket 数据获取失败 [${matchId}]`);
@@ -302,10 +387,85 @@ class DataAggregator {
 
 
   /**
-   * 获取所有比赛
+   * 获取所有比赛数据
    */
   getAllMatches(): UnifiedMatch[] {
     return Array.from(this.matches.values());
+  }
+
+  /**
+   * 订阅 Polymarket WebSocket 实时价格
+   */
+  private subscribeToMarketPrice(
+    matchId: string,
+    marketId: string,
+    homeTokenId: string,
+    awayTokenId: string
+  ): void {
+    // 避免重复订阅
+    if (this.subscribedMarkets.has(marketId)) {
+      logger.debug(`跳过重复订阅: ${marketId.slice(0, 8)}...`);
+      return;
+    }
+
+    this.subscribedMarkets.add(marketId);
+    
+    const match = this.matches.get(matchId);
+    const homeTeam = match?.homeTeam?.name || 'Unknown';
+    const awayTeam = match?.awayTeam?.name || 'Unknown';
+    
+    logger.info(`🔔 订阅市场价格 [${homeTeam} vs ${awayTeam}]`);
+    logger.info(`   Market ID: ${marketId.slice(0, 8)}...`);
+    logger.info(`   主队 Token: ${homeTokenId.slice(0, 8)}...`);
+    logger.info(`   客队 Token: ${awayTokenId.slice(0, 8)}...`);
+
+    // 订阅主队 token
+    polymarketService.subscribe(homeTokenId, (data: any) => {
+      const match = this.matches.get(matchId);
+      if (match && match.poly) {
+        const oldPrice = match.poly.homePrice;
+        const newPrice = data.price || data.midPrice;
+        
+        logger.debug(`收到主队价格回调: ${newPrice?.toFixed(4) || 'N/A'} (旧价格: ${oldPrice.toFixed(4)})`);
+        
+        if (newPrice && Math.abs(newPrice - oldPrice) > 0.01) {
+          logger.info(`🔴 实时价格更新 [${homeTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
+          match.poly.homePrice = newPrice;
+          match.lastUpdate = Date.now();
+          
+          // 重新计算套利信号
+          if (match.dataCompleteness.hasPolyData && match.dataCompleteness.hasESPNData) {
+            match.signals = arbitrageEngine.calculateSignals(match);
+          }
+        }
+      } else {
+        logger.warn(`⚠️ 收到价格但找不到比赛: ${matchId}`);
+      }
+    });
+
+    // 订阅客队 token
+    polymarketService.subscribe(awayTokenId, (data: any) => {
+      const match = this.matches.get(matchId);
+      if (match && match.poly) {
+        const oldPrice = match.poly.awayPrice;
+        const newPrice = data.price || data.midPrice;
+        
+        logger.debug(`收到客队价格回调: ${newPrice?.toFixed(4) || 'N/A'} (旧价格: ${oldPrice.toFixed(4)})`);
+        
+        if (newPrice && Math.abs(newPrice - oldPrice) > 0.01) {
+          logger.info(`🔵 实时价格更新 [${awayTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
+          match.poly.awayPrice = newPrice;
+          match.lastUpdate = Date.now();
+          
+          // 重新计算套利信号
+          if (match.dataCompleteness.hasPolyData && match.dataCompleteness.hasESPNData) {
+            match.signals = arbitrageEngine.calculateSignals(match);
+          }
+        }
+      } else {
+        logger.warn(`⚠️ 收到价格但找不到比赛: ${matchId}`);
+      }
+    });
   }
 
   /**

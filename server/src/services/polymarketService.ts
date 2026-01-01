@@ -98,20 +98,12 @@ class PolymarketService {
   }
 
   /**
-   * 订阅市场频道
+   * 订阅市场频道（初始化时不订阅，等待具体 token）
    */
   private subscribeToMarketChannel(): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      // 订阅所有市场的价格变化
-      const subscribeMessage = {
-        type: 'subscribe',
-        channel: 'market',
-        markets: [], // 空数组表示订阅所有市场
-      };
-      
-      this.ws.send(JSON.stringify(subscribeMessage));
-      logger.info('已订阅 Polymarket 市场频道');
-    }
+    // Polymarket CLOB WebSocket 不支持全局订阅
+    // 需要订阅具体的 asset_id (token ID)
+    logger.info('✅ Polymarket WebSocket 已就绪，等待订阅具体 token');
   }
 
   /**
@@ -119,6 +111,9 @@ class PolymarketService {
    */
   private handleMessage(message: any): void {
     try {
+      // 记录原始消息（调试用）
+      logger.debug(`收到 WS 消息:`, JSON.stringify(message).slice(0, 200));
+      
       // CLOB WebSocket 消息格式
       const { event_type, asset_id, market, price, bids, asks } = message;
       
@@ -127,44 +122,55 @@ class PolymarketService {
         // 计算中间价格
         const bestBid = bids?.[0]?.price ? parseFloat(bids[0].price) : 0;
         const bestAsk = asks?.[0]?.price ? parseFloat(asks[0].price) : 0;
-        const midPrice = (bestBid + bestAsk) / 2;
+        const midPrice = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : (bestBid || bestAsk);
         
-        logger.debug(`价格更新 [${asset_id.slice(0, 8)}...]: ${midPrice.toFixed(4)}`);
-        
-        // 通知订阅者
-        const callbacks = this.subscribers.get(market || asset_id);
-        if (callbacks) {
-          callbacks.forEach(callback => callback({
-            asset_id,
-            market,
-            price: midPrice,
-            bestBid,
-            bestAsk,
-            bids,
-            asks,
-          }));
-        }
-        
-        // 更新缓存
-        if (asset_id && midPrice > 0) {
+        if (midPrice > 0) {
+          logger.info(`💰 订单簿价格 [${asset_id.slice(0, 8)}...]: $${midPrice.toFixed(4)} (买:${bestBid.toFixed(4)}, 卖:${bestAsk.toFixed(4)})`);
+          
+          // 通知订阅者
+          const callbacks = this.subscribers.get(asset_id);
+          if (callbacks && callbacks.size > 0) {
+            logger.debug(`通知 ${callbacks.size} 个订阅者`);
+            callbacks.forEach(callback => callback({
+              asset_id,
+              market,
+              price: midPrice,
+              bestBid,
+              bestAsk,
+              bids,
+              asks,
+            }));
+          } else {
+            logger.warn(`⚠️ 没有订阅者: ${asset_id.slice(0, 8)}...`);
+          }
+          
+          // 更新缓存
           this.updatePriceCache(asset_id, midPrice);
         }
       }
       
       // 处理价格变化消息 (price_change)
-      if (event_type === 'price_change' && asset_id && price) {
+      else if (event_type === 'price_change' && asset_id && price) {
         const priceValue = typeof price === 'string' ? parseFloat(price) : price;
         
-        logger.debug(`价格变化 [${asset_id.slice(0, 8)}...]: ${priceValue.toFixed(4)}`);
+        logger.info(`💰 价格变化 [${asset_id.slice(0, 8)}...]: $${priceValue.toFixed(4)}`);
         
         // 通知订阅者
-        const callbacks = this.subscribers.get(market || asset_id);
-        if (callbacks) {
-          callbacks.forEach(callback => callback(message));
+        const callbacks = this.subscribers.get(asset_id);
+        if (callbacks && callbacks.size > 0) {
+          callbacks.forEach(callback => callback({
+            asset_id,
+            price: priceValue,
+          }));
         }
         
         // 更新缓存
         this.updatePriceCache(asset_id, priceValue);
+      }
+      
+      // 其他消息类型（可能是确认消息等）
+      else {
+        logger.debug(`其他消息类型: ${event_type || message.type || 'unknown'}`);
       }
     } catch (error) {
       logger.error('处理 WebSocket 消息失败:', error);
@@ -172,23 +178,28 @@ class PolymarketService {
   }
 
   /**
-   * 订阅特定市场更新
+   * 订阅特定 token 更新（Polymarket CLOB API）
+   * @param assetId - Token ID (0x...)
+   * @param callback - 价格更新回调
    */
-  subscribe(marketId: string, callback: (data: any) => void): void {
-    if (!this.subscribers.has(marketId)) {
-      this.subscribers.set(marketId, new Set());
+  subscribe(assetId: string, callback: (data: any) => void): void {
+    if (!this.subscribers.has(assetId)) {
+      this.subscribers.set(assetId, new Set());
     }
-    this.subscribers.get(marketId)!.add(callback);
+    this.subscribers.get(assetId)!.add(callback);
 
-    // 发送订阅消息到 WebSocket
+    // 发送订阅消息到 WebSocket（CLOB API 格式）
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       const subscribeMessage = {
+        auth: {},
         type: 'subscribe',
-        channel: 'market',
-        markets: [marketId],
+        channel: 'book',
+        asset_id: assetId,
       };
       this.ws.send(JSON.stringify(subscribeMessage));
-      logger.debug(`已订阅市场: ${marketId}`);
+      logger.info(`📡 订阅 token 价格: ${assetId.slice(0, 8)}...`);
+    } else {
+      logger.warn(`⚠️ WebSocket 未连接，无法订阅: ${assetId.slice(0, 8)}...`);
     }
   }
 

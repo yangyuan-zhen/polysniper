@@ -82,9 +82,9 @@ function App() {
     // 转换为数组并排序
     const chinaToday = getChinaToday();
     const chinaTomorrow = (() => {
-      const today = new Date(chinaToday);
-      today.setDate(today.getDate() + 1);
-      return today.toISOString().split('T')[0];
+      const now = Date.now();
+      const tomorrow = now + 24 * 60 * 60 * 1000; // 加一天
+      return toChinaDateKey(tomorrow);
     })();
 
     dateMap.forEach((matches, dateKey) => {
@@ -137,18 +137,35 @@ function App() {
     // 在开发环境下,Vite 会自动代理到 localhost:3000
     websocketService.connect();
 
-    // 监听原生连接状态变化
-    websocketService.onConnect(() => {
+    // 定义回调函数（用于清理）
+    const handleConnect = () => {
       console.log('[App] ✅ WebSocket 已连接');
       setConnected(true);
       // 连接成功后立即订阅
       websocketService.subscribe();
-    });
+    };
 
-    websocketService.onDisconnect(() => {
+    const handleDisconnect = () => {
       console.log('[App] ❌ WebSocket 已断开');
       setConnected(false);
-    });
+    };
+
+    const handleMatchesUpdate = (data: any) => {
+      console.log(`[App] 📊 收到比赛更新 (${data.type}):`, data.data.length, '场比赛', new Date().toLocaleTimeString());
+      setMatches(data.data);
+      setLoading(false);
+    };
+
+    const handleSignalAlert = (data: any) => {
+      console.log(`[App] 🚨 套利信号告警 - ${data.matchId}:`, data.signals.length, '个信号');
+      // 可以在这里添加通知逻辑
+    };
+
+    // 注册监听器
+    websocketService.onConnect(handleConnect);
+    websocketService.onDisconnect(handleDisconnect);
+    websocketService.onMatchesUpdate(handleMatchesUpdate);
+    websocketService.onSignalAlert(handleSignalAlert);
 
     // 检查初始连接状态（防止监听器注册前已经连接）
     if (websocketService.isConnected()) {
@@ -157,23 +174,14 @@ function App() {
       websocketService.subscribe();
     }
 
-    // 监听比赛数据更新
-    websocketService.onMatchesUpdate((data) => {
-      console.log(`[App] 📊 收到比赛更新 (${data.type}):`, data.data.length, '场比赛');
-      setMatches(data.data);
-      setLoading(false);
-    });
-
-    // 监听套利信号告警
-    websocketService.onSignalAlert((data) => {
-      console.log(`[App] 🚨 套利信号告警 - ${data.matchId}:`, data.signals.length, '个信号');
-      // 可以在这里添加通知逻辑
-    });
-
-    // 清理
+    // 清理：移除事件监听器，但保持连接
     return () => {
-      console.log('[App] 🔌 断开 WebSocket 连接');
-      websocketService.disconnect();
+      console.log('[App] 🧹 清理 WebSocket 监听器');
+      websocketService.off('connect', handleConnect);
+      websocketService.off('disconnect', handleDisconnect);
+      websocketService.off('matchesUpdate', handleMatchesUpdate);
+      websocketService.off('signalAlert', handleSignalAlert);
+      // 注意：不要断开连接，让 WebSocket 保持活跃
     };
   }, []);
 

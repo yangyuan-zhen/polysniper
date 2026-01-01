@@ -99,9 +99,10 @@ npm start
 ## 📊 数据更新机制
 
 ### Polymarket 价格
-- **WebSocket 实时推送** ⚡ 
+- **WebSocket 实时推送** ⚡ **（已实现）**
 - 延迟 < 1秒
-- 无需轮询，服务器主动推送
+- 使用协议层 Ping/Pong 心跳（每15秒）
+- REST API 轮询作为备用（45秒）
 
 ### ESPN 比赛信息
 - **动态轮询频率**:
@@ -118,19 +119,25 @@ npm start
 PORT=3000
 NODE_ENV=development
 
-# Polymarket WebSocket 代理（⚠️ 必需！）
-POLYMARKET_WS_PROXY=http://127.0.0.1:7890
+# Polymarket WebSocket（⚠️ 国内需要代理！）
 POLYMARKET_WS_ENABLED=true
 POLYMARKET_WS_URL=wss://ws-subscriptions-clob.polymarket.com/ws/market
+POLYMARKET_WS_PROXY=http://127.0.0.1:7890
 
 # CORS
 CORS_ORIGIN=*
 
 # Redis (可选)
 REDIS_ENABLED=false
+
+# 日志级别（debug 可查看心跳详情）
+LOG_LEVEL=info
 ```
 
-> ⚠️ **重要**: Polymarket API 需要代理访问（国内网络环境）
+> ⚠️ **重要**: 
+> - Polymarket WebSocket 需要 HTTP 代理访问（国内网络）
+> - 心跳机制使用 WebSocket 协议层 Ping/Pong（15秒间隔）
+> - 详细配置请参考 [server/docs/WEBSOCKET.md](./server/docs/WEBSOCKET.md)
 
 ## 📝 开发指南
 

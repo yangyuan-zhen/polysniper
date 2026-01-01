@@ -1,11 +1,12 @@
 # Polymarket WebSocket 实时价格推送
 
-> **🔔 重要说明**  
-> - **公共数据访问**（市场列表、价格、订单簿）：使用 **Gamma API (REST)**，**无需 API Key 或私钥** ✅  
-> - **WebSocket 实时推送**：需要 **API Key 认证**（CLOB WebSocket 要求认证）  
-> - **交易功能**：需要 **API Key + 钱包私钥**（当前项目不涉及）  
+> **✅ 已成功实现（2026-01-01）**  
+> - **WebSocket 连接**：使用 CLOB WebSocket 实时获取价格数据  
+> - **心跳机制**：使用 WebSocket 协议层 Ping/Pong 帧（每15秒）  
+> - **无需认证**：订阅公开市场数据无需 API Key  
+> - **代理支持**：国内网络需要配置 HTTP 代理访问  
 >  
-> 💡 **当前项目**：使用 Gamma API 轮询获取价格数据，无需配置 API Key
+> 💡 **当前方案**：WebSocket 实时推送（< 1秒延迟）+ REST API 轮询（45秒）双重保障
 
 ## 📡 功能说明
 
@@ -73,115 +74,157 @@ polymarketService.subscribe('market_id', (priceData) => {
 polymarketService.unsubscribe('market_id', callback);
 ```
 
-## ⚠️ 当前问题
+## 💓 心跳机制（重要）
 
-### 问题：连接失败
-```
-[error]: AggregateError
-[warn]: WebSocket 连接已关闭
-[info]: 将在 2000ms 后重连 (尝试 1/10)
-```
+### WebSocket 协议层 Ping/Pong
 
-### 可能原因
-
-1. **WebSocket URL 不正确**
-   - 当前使用: `wss://ws-subscriptions-clob.polymarket.com/ws/market`
-   - Polymarket 官方文档可能已更新
-
-2. **需要认证**
-   - 可能需要 API Key
-   - 或特殊的握手参数
-
-3. **网络限制**
-   - 防火墙/代理阻止 WebSocket
-   - 国内网络访问限制
-
-4. **协议变更**
-   - Polymarket 可能更新了 WebSocket 协议
-   - 消息格式可能不同
-
-## 🛠️ 解决方案
-
-### 方案 1：暂时禁用（推荐）
-
-既然 REST API 工作正常，可以先禁用 WebSocket：
-
-```env
-# .env
-POLYMARKET_WS_ENABLED=false
-```
-
-**优点**：
-- 避免错误日志干扰
-- REST API 已足够（45秒刷新一次）
-- 等 NBA 赛季开始后再优化
-
-**缺点**：
-- 失去实时性（但影响不大）
-
-### 方案 2：验证 WebSocket URL
-
-参考 Polymarket 官方文档，确认正确的 WebSocket 端点：
-
-```javascript
-// 可能的正确 URL
-wss://ws-subscriptions-clob.polymarket.com/ws/market
-wss://clob.polymarket.com/ws
-wss://ws.polymarket.com/v1/markets
-```
-
-### 方案 3：添加详细日志
-
-临时启用详细日志，查看具体错误：
+Polymarket CLOB WebSocket 使用 **WebSocket 协议层的 Ping/Pong 帧**保持连接：
 
 ```typescript
-this.ws.on('error', (error) => {
-  logger.error('WebSocket 错误详情:', {
-    message: error.message,
-    code: error.code,
-    stack: error.stack
-  });
+// ❌ 错误方式：发送 JSON 消息（会返回 INVALID OPERATION）
+ws.send(JSON.stringify({ type: 'ping' }));
+
+// ✅ 正确方式：使用 WebSocket 协议层方法
+ws.ping();  // 发送 Ping 帧
+ws.on('pong', () => {  // 监听 Pong 响应
+  console.log('收到心跳响应');
 });
 ```
 
-### 方案 4：使用代理
+### 心跳配置
 
-如果是网络问题，可以配置 HTTP/SOCKS 代理：
+- **频率**: 每 15 秒（CLOB 建议 10-20 秒，比官方要求的 20-30 秒更保守）
+- **超时**: 10 秒
+- **实现**:
+  - Python: `run_forever(ping_interval=15, ping_timeout=10)`
+  - TypeScript: `setInterval(() => ws.ping(), 15000)`
+
+## 🛠️ 实现细节
+
+### 1. WebSocket 连接配置
 
 ```typescript
-const HttpsProxyAgent = require('https-proxy-agent');
+import WebSocket from 'ws';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
-const ws = new WebSocket(url, {
-  agent: new HttpsProxyAgent('http://proxy:8080')
+// 配置代理（国内访问必需）
+const options: any = {};
+if (config.polymarket.wsProxy) {
+  options.agent = new HttpsProxyAgent(config.polymarket.wsProxy);
+}
+
+// 连接 WebSocket
+this.ws = new WebSocket(
+  'wss://ws-subscriptions-clob.polymarket.com/ws/market',
+  options
+);
+```
+
+### 2. 订阅市场数据
+
+```typescript
+// 订阅格式（必须使用 assets_ids，不是 asset_id）
+const subscribeMessage = {
+  type: 'market',
+  assets_ids: [
+    '0x1234...', // token ID 1
+    '0x5678...', // token ID 2
+  ],
+  initial_dump: true  // 请求初始数据快照
+};
+
+ws.send(JSON.stringify(subscribeMessage));
+```
+
+### 3. 心跳实现
+
+**TypeScript (polymarketService.ts)**:
+```typescript
+private pingInterval: NodeJS.Timeout | null = null;
+
+private startHeartbeat(): void {
+  this.pingInterval = setInterval(() => {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.ping();  // 发送协议层 Ping 帧
+      logger.debug('💓 发送 WebSocket Ping 帧');
+    }
+  }, 15000);  // 15秒
+}
+
+// 监听 Pong 响应
+this.ws.on('pong', () => {
+  logger.debug('💚 收到 WebSocket Pong 响应');
+});
+```
+
+**Python (test.py)**:
+```python
+import websocket
+
+ws = websocket.WebSocketApp(
+    "wss://ws-subscriptions-clob.polymarket.com/ws/market",
+    on_open=on_open,
+    on_message=on_message,
+    on_pong=lambda ws, msg: print("💚 收到 Pong 响应")
+)
+
+ws.run_forever(
+    http_proxy_host="127.0.0.1",
+    http_proxy_port=7890,
+    ping_interval=15,   # 每15秒发送 Ping
+    ping_timeout=10     # Ping 超时时间
+)
+```
+
+### 4. 消息处理
+
+```typescript
+ws.on('message', (data) => {
+  const message = JSON.parse(data.toString());
+  
+  // 处理订单簿快照
+  if (message.event_type === 'book') {
+    const { asset_id, last_trade_price } = message;
+    updatePriceCache(asset_id, parseFloat(last_trade_price));
+  }
+  
+  // 处理价格变化
+  if (message.event_type === 'price_change') {
+    message.price_changes.forEach((change: any) => {
+      updatePriceCache(change.asset_id, parseFloat(change.price));
+    });
+  }
 });
 ```
 
 ## 📝 配置说明
 
-### 启用/禁用 WebSocket
+### 环境变量配置
 
 ```env
 # .env
 
-# 禁用 WebSocket（推荐当前使用）
-POLYMARKET_WS_ENABLED=false
-
-# 启用 WebSocket（需要确保连接成功）
+# 启用 WebSocket（已成功实现）
 POLYMARKET_WS_ENABLED=true
 
-# WebSocket URL（可以尝试不同的端点）
+# WebSocket 端点（已验证可用）
 POLYMARKET_WS_URL=wss://ws-subscriptions-clob.polymarket.com/ws/market
+
+# 代理配置（国内访问必需）
+POLYMARKET_WS_PROXY=http://127.0.0.1:7890
+
+# 日志级别
+LOG_LEVEL=info  # debug 可查看心跳详情
 ```
 
-### 日志级别
+### 心跳参数说明
 
-```env
-# 查看详细日志
-LOG_LEVEL=debug
-
-# 减少日志输出
-LOG_LEVEL=info
-```
+| 参数 | Python | TypeScript | 说明 |
+|------|--------|------------|------|
+| **Ping 频率** | `ping_interval=15` | `setInterval(..., 15000)` | 每15秒发送一次 |
+| **Ping 超时** | `ping_timeout=10` | - | 10秒无响应视为超时 |
+| **重连延迟** | 自动 | `reconnectDelay * 2^n` | 指数退避，最大30秒 |
+| **最大重连** | 自动 | `maxReconnectAttempts=10` | 失败10次后停止 |
 
 ## 🔄 REST API vs WebSocket
 
@@ -221,24 +264,50 @@ ws.on('message', (data) => {
 - ⚠️ 网络不稳定时需要重连
 - ⚠️ 当前连接失败
 
-## 🎯 建议
+## 🎯 使用建议
 
-### 当前阶段（数据验证期）
-1. **禁用 WebSocket**（`POLYMARKET_WS_ENABLED=false`）
-2. 使用 REST API 获取数据
-3. 45秒刷新频率足够测试
+### 生产环境配置
 
-### NBA 赛季期间（实战期）
-1. 研究 Polymarket WebSocket 文档
-2. 验证正确的连接方式
-3. 测试稳定性后再启用
-4. 或考虑使用其他实时数据源
+```env
+# 推荐配置（WebSocket + REST 双重保障）
+POLYMARKET_WS_ENABLED=true
+POLYMARKET_WS_PROXY=http://127.0.0.1:7890
+LOG_LEVEL=info
+```
 
-### 长期优化
-1. 联系 Polymarket 技术支持
-2. 加入 Polymarket Discord/社区
-3. 参考其他开发者的实现
-4. 考虑使用官方 SDK（如果有）
+**优势**：
+- ✅ WebSocket 提供实时更新（< 1秒）
+- ✅ REST API 作为备用（45秒轮询）
+- ✅ 双重机制确保数据可靠性
+
+### 调试模式
+
+```env
+# 查看详细心跳日志
+LOG_LEVEL=debug
+```
+
+**日志输出示例**：
+```
+💓 发送 WebSocket Ping 帧
+💚 收到 WebSocket Pong 响应
+📥 原始消息: {"event_type":"book","asset_id":"0x123...
+📖 订单簿 [0x123...]: $0.6500
+```
+
+### 故障排查
+
+**问题 1**: `INVALID OPERATION` 错误
+- **原因**: 发送了 JSON 心跳消息而非协议层 Ping
+- **解决**: 使用 `ws.ping()` 或 `ping_interval` 参数
+
+**问题 2**: 连接立即断开
+- **原因**: 没有心跳，服务器超时断开
+- **解决**: 确保心跳机制正常工作（15秒一次）
+
+**问题 3**: 无法连接
+- **原因**: 国内网络限制
+- **解决**: 配置 HTTP 代理（`POLYMARKET_WS_PROXY`）
 
 ## 📚 相关资源
 
@@ -247,40 +316,70 @@ ws.on('message', (data) => {
 - [GitHub Issues](https://github.com/Polymarket/clob-client/issues)
 - [Discord 社区](https://discord.gg/polymarket)
 
-## 🔍 调试建议
+## 🔍 测试与验证
 
-### 1. 测试连接
+### 1. 快速测试脚本
+
 ```bash
-# 使用 wscat 测试 WebSocket
-npm install -g wscat
-wscat -c wss://ws-subscriptions-clob.polymarket.com/ws/market
+# 运行 Python 测试脚本
+python test.py
 ```
 
-### 2. 查看详细错误
+**预期输出**：
+```
+✅ 已连接到 WebSocket！
+💓 WebSocket 原生 Ping 心跳已启用（每15秒）
+📡 已订阅 5 个活跃资产
+💚 收到服务器 Pong 响应
+📨 收到消息: {...}
+```
+
+### 2. 验证心跳工作
+
 ```typescript
-// 临时添加更详细的日志
-this.ws.on('error', (error) => {
-  console.log('完整错误对象:', JSON.stringify(error, null, 2));
-  console.log('错误类型:', error.constructor.name);
+// 在 TypeScript 代码中添加计数器
+let pongCount = 0;
+this.ws.on('pong', () => {
+  pongCount++;
+  logger.info(`✅ 心跳正常 (${pongCount} 次响应)`);
 });
 ```
 
-### 3. 尝试不同 URL
+### 3. 监控连接稳定性
+
 ```typescript
-// 测试不同的 WebSocket 端点
-const urls = [
-  'wss://ws-subscriptions-clob.polymarket.com/ws/market',
-  'wss://clob.polymarket.com/ws',
-  'wss://ws.polymarket.com/markets',
-];
+let connectionUptime = 0;
+setInterval(() => {
+  if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    connectionUptime++;
+    logger.info(`⏱️  连接稳定运行: ${connectionUptime * 15}秒`);
+  }
+}, 15000);
 ```
 
 ## ✅ 总结
 
-**WebSocket 的作用**：实时获取 Polymarket 市场价格更新
+### 当前状态
 
-**当前状态**：连接失败，建议暂时禁用
+- ✅ **WebSocket 连接**: 成功实现（2026-01-01）
+- ✅ **心跳机制**: WebSocket 协议层 Ping/Pong（15秒）
+- ✅ **代理支持**: HTTP 代理配置完成
+- ✅ **消息处理**: 订单簿 + 价格变化事件
+- ✅ **容错机制**: 自动重连 + REST API 备用
 
-**替代方案**：REST API 轮询（45秒间隔）已足够
+### 关键要点
 
-**未来优化**：NBA 赛季开始后再解决 WebSocket 连接问题
+1. **心跳必须使用协议层方法**，不能发送 JSON 消息
+2. **国内访问需要配置代理**（`POLYMARKET_WS_PROXY`）
+3. **订阅使用 `assets_ids` 数组**，不是 `asset_id` 单个值
+4. **心跳频率 15 秒**，比官方建议更保守，确保稳定
+5. **WebSocket + REST 双重保障**，确保数据可靠性
+
+### 性能指标
+
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| **延迟** | < 1秒 | WebSocket 实时推送 |
+| **心跳频率** | 15秒 | 保持连接活跃 |
+| **重连间隔** | 1-30秒 | 指数退避策略 |
+| **备用轮询** | 45秒 | REST API 容错 |

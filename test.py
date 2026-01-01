@@ -2,8 +2,6 @@ import websocket
 import json
 import requests
 import ast
-import threading
-import time
 
 # 获取当前活跃的市场
 print("🔍 获取活跃市场...")
@@ -52,25 +50,15 @@ def on_error(ws, error):
 def on_close(ws, close_status_code, close_msg):
     print(f"⚠️ 连接已关闭 - Code: {close_status_code}, Msg: {close_msg}")
 
-def heartbeat(ws):
-    """心跳线程：每15秒发送一次ping保持连接（CLOB建议10-20秒）"""
-    while True:
-        time.sleep(15)
-        try:
-            if ws.sock and ws.sock.connected:
-                ws.send(json.dumps({"type": "ping"}))
-                print("💓 发送心跳 Ping")
-        except Exception as e:
-            print(f"❌ 心跳发送失败: {e}")
-            break
+def on_ping(ws, message):
+    print("💓 收到服务器 Ping")
+
+def on_pong(ws, message):
+    print("💚 收到服务器 Pong 响应")
 
 def on_open(ws):
     print("✅ 已连接到 WebSocket！")
-    
-    # 启动心跳线程（每15秒一次，CLOB建议10-20秒）
-    heartbeat_thread = threading.Thread(target=heartbeat, args=(ws,), daemon=True)
-    heartbeat_thread.start()
-    print("💓 心跳线程已启动（每15秒）")
+    print("💓 WebSocket 原生 Ping 心跳已启用（每15秒）")
     
     # 使用活跃市场的 token（取前5个）
     tokens_to_subscribe = active_tokens[:5] if active_tokens else []
@@ -94,11 +82,15 @@ ws = websocket.WebSocketApp(
     on_open=on_open,
     on_message=on_message,
     on_error=on_error,
-    on_close=on_close
+    on_close=on_close,
+    on_ping=on_ping,
+    on_pong=on_pong
 )
 
 ws.run_forever(
     http_proxy_host="127.0.0.1", 
     http_proxy_port=7890,
-    proxy_type="http"  # 明确指定代理类型
+    proxy_type="http",
+    ping_interval=15,  # 每15秒发送 WebSocket Ping 帧
+    ping_timeout=10    # Ping 超时时间
 )

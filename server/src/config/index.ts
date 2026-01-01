@@ -14,9 +14,11 @@ export const config = {
     // CLOB API - 用于交易（需要认证，目前不使用）
     clobApiUrl: process.env.POLYMARKET_CLOB_API_URL || 'https://clob.polymarket.com',
     // WebSocket - 实时价格推送（CLOB 订单簿）
-    wsUrl: process.env.POLYMARKET_WS_URL || 'wss://ws-subscriptions-clob.polymarket.com/ws',
+    wsUrl: process.env.POLYMARKET_WS_URL || 'wss://ws-subscriptions-clob.polymarket.com/ws/market',
     // WebSocket 启用开关（默认启用）
     wsEnabled: process.env.POLYMARKET_WS_ENABLED !== 'false', // 默认启用，除非明确设置为 false
+    // WebSocket 代理设置
+    wsProxy: process.env.POLYMARKET_WS_PROXY || process.env.HTTP_PROXY || 'http://127.0.0.1:7890',
     // API Key - 仅交易时需要
     apiKey: process.env.POLYMARKET_API_KEY || '',
   },

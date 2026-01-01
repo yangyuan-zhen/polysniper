@@ -1,5 +1,71 @@
 # 更新日志
 
+## 2026-01-01 - Polymarket WebSocket 心跳机制实现
+
+### ✅ 功能实现 - WebSocket 协议层心跳
+
+**问题**: 
+- WebSocket 连接后发送 `{"type": "ping"}` JSON 消息
+- 服务器返回 `INVALID OPERATION` 错误
+- 连接不稳定，可能在 20-30 秒后被服务器断开
+
+**根本原因**: 
+- Polymarket CLOB WebSocket 不支持应用层心跳消息
+- 必须使用 **WebSocket 协议层的 Ping/Pong 帧**（RFC 6455 标准）
+- 官方文档要求每 20-30 秒发送 Ping，但实际测试 15 秒更稳定
+
+**解决方案**: 
+- **Python (test.py)**: 使用 `run_forever(ping_interval=15, ping_timeout=10)`
+- **TypeScript (polymarketService.ts)**: 使用 `ws.ping()` 方法（每 15 秒调用）
+- 添加 `on('pong')` 监听器确认心跳响应
+
+**实现细节**:
+```typescript
+// TypeScript - 协议层心跳
+this.pingInterval = setInterval(() => {
+  if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    this.ws.ping();  // 发送 Ping 帧
+  }
+}, 15000);
+
+this.ws.on('pong', () => {
+  logger.debug('💚 收到 Pong 响应');
+});
+```
+
+```python
+# Python - 使用内置参数
+ws.run_forever(
+    http_proxy_host="127.0.0.1",
+    http_proxy_port=7890,
+    ping_interval=15,  # 每 15 秒
+    ping_timeout=10
+)
+```
+
+**测试结果**: 
+- ✅ WebSocket 连接稳定，不再断开
+- ✅ 每 15 秒收到 Pong 响应确认
+- ✅ 无 `INVALID OPERATION` 错误
+- ✅ 实时接收市场数据更新（< 1 秒延迟）
+
+**配置参数**:
+- **心跳频率**: 15 秒（CLOB 建议 10-20 秒，比官方要求更保守）
+- **心跳超时**: 10 秒
+- **代理配置**: `POLYMARKET_WS_PROXY=http://127.0.0.1:7890`（国内必需）
+
+**相关文件**: 
+- `test.py` - Python 测试脚本
+- `server/src/services/polymarketService.ts` (Line 115-142)
+- `server/docs/WEBSOCKET.md` - 完整文档
+
+**文档更新**:
+- ✅ `server/docs/WEBSOCKET.md` - 添加心跳机制详细说明
+- ✅ `README.md` - 更新 WebSocket 状态为"已实现"
+- ✅ `server/.env.example` - 添加心跳配置说明
+
+---
+
 ## 2025-12-16 - Polymarket 价格获取功能修复与完善
 
 ### 🐛 Bug修复 - 时间校验逻辑

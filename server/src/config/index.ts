@@ -15,8 +15,8 @@ export const config = {
     clobApiUrl: process.env.POLYMARKET_CLOB_API_URL || 'https://clob.polymarket.com',
     // WebSocket - 实时价格推送（CLOB 订单簿）
     wsUrl: process.env.POLYMARKET_WS_URL || 'wss://ws-subscriptions-clob.polymarket.com/ws',
-    // WebSocket 启用开关
-    wsEnabled: process.env.POLYMARKET_WS_ENABLED === 'true',
+    // WebSocket 启用开关（默认启用）
+    wsEnabled: process.env.POLYMARKET_WS_ENABLED !== 'false', // 默认启用，除非明确设置为 false
     // API Key - 仅交易时需要
     apiKey: process.env.POLYMARKET_API_KEY || '',
   },

@@ -7,6 +7,7 @@ import { config } from '../config';
 export class WebSocketServer {
   private io: SocketIOServer;
   private updateInterval: NodeJS.Timeout | null = null;
+  private lastMatchesSnapshot: string = '';
 
   constructor(httpServer: HTTPServer) {
     this.io = new SocketIOServer(httpServer, {
@@ -38,7 +39,9 @@ export class WebSocketServer {
         } else {
           // 订阅所有比赛
           socket.join('all-matches');
-          logger.info(`客户端 ${socket.id} 已订阅所有比赛`);
+          const room = this.io.sockets.adapter.rooms.get('all-matches');
+          const clientCount = room ? room.size : 0;
+          logger.info(`客户端 ${socket.id} 已订阅所有比赛 (当前 ${clientCount} 个客户端)`);
         }
 
         // 立即发送当前数据
@@ -99,12 +102,12 @@ export class WebSocketServer {
    * 启动实时推送
    */
   start(): void {
-    // 每3秒向所有连接的客户端推送更新
+    // 每1秒检查并推送更新（只在数据变化时）
     this.updateInterval = setInterval(() => {
       this.broadcastUpdates();
-    }, 3000);
+    }, 1000);
 
-    logger.info('WebSocket 服务器已启动');
+    logger.info('WebSocket 服务器已启动（更新检测: 1秒）');
   }
 
   /**
@@ -113,13 +116,42 @@ export class WebSocketServer {
   private broadcastUpdates(): void {
     try {
       const matches = dataAggregator.getAllMatches();
-
-      // 向订阅所有比赛的客户端广播
-      this.io.to('all-matches').emit('matchesUpdate', {
-        type: 'update',
-        data: matches,
-        timestamp: Date.now(),
-      });
+      
+      // 生成当前数据快照（用于比较）
+      // 注意：价格四舍五入到2位小数，胜率到1位小数
+      const currentSnapshot = JSON.stringify(
+        matches.map(m => ({
+          id: m.id,
+          status: m.status,
+          homeScore: m.homeTeam.score,
+          awayScore: m.awayTeam.score,
+          // 价格四舍五入到2位小数（0.01精度）
+          homePrice: m.poly?.homePrice ? Math.round(m.poly.homePrice * 100) / 100 : null,
+          awayPrice: m.poly?.awayPrice ? Math.round(m.poly.awayPrice * 100) / 100 : null,
+          // 胜率四舍五入到1位小数（0.1%精度）
+          homeWinProb: m.espn?.homeWinProb ? Math.round(m.espn.homeWinProb * 1000) / 1000 : null,
+          awayWinProb: m.espn?.awayWinProb ? Math.round(m.espn.awayWinProb * 1000) / 1000 : null,
+          // 不包含 lastUpdate，避免时间戳变化导致误判
+        }))
+      );
+      
+      // 只在数据变化时推送
+      if (currentSnapshot !== this.lastMatchesSnapshot) {
+        this.lastMatchesSnapshot = currentSnapshot;
+        
+        // 统计连接的客户端数量
+        const room = this.io.sockets.adapter.rooms.get('all-matches');
+        const clientCount = room ? room.size : 0;
+        
+        // 向订阅所有比赛的客户端广播
+        this.io.to('all-matches').emit('matchesUpdate', {
+          type: 'update',
+          data: matches,
+          timestamp: Date.now(),
+        });
+        
+        logger.info(`📡 数据变化，推送更新 (${matches.length} 场比赛) → ${clientCount} 个客户端`);
+      }
 
       // 向订阅特定比赛的客户端广播
       matches.forEach(match => {

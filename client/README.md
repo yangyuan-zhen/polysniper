@@ -106,7 +106,6 @@ HTTPS_PROXY=http://127.0.0.1:7890
 
 ### 功能说明
 - [📊 SIGNALS_GUIDE.md](./SIGNALS_GUIDE.md) - 交易信号详解
-- [⚡ HUPU_API_OPTIMIZATION.md](./HUPU_API_OPTIMIZATION.md) - **虎扑API性能优化**
 
 ### 产品文档
 - [📋 PRD.md](./PRD.md) - 产品需求文档

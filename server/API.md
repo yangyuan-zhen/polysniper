@@ -134,13 +134,6 @@ GET /api/matches?status=LIVE&hasSignals=true
         "pregameAwayWinProb": 0.326,
         "injuries": []
       },
-      "hupu": {
-        "homeScore": 57,
-        "awayScore": 53,
-        "quarter": "Q2",
-        "timeRemaining": "00:00",
-        "status": "LIVE"
-      },
       "signals": [
         {
           "type": "BUY_HOME",
@@ -160,8 +153,7 @@ GET /api/matches?status=LIVE&hasSignals=true
       "lastUpdate": 1734325080000,
       "dataCompleteness": {
         "hasPolyData": true,
-        "hasESPNData": true,
-        "hasHupuData": true
+        "hasESPNData": true
       }
     }
   ],
@@ -287,8 +279,7 @@ GET /api/stats
     "avgConfidence": "0.750",
     "dataCompleteness": {
       "withPolyData": 2,
-      "withESPNData": 5,
-      "withHupuData": 5
+      "withESPNData": 5
     }
   },
   "timestamp": "2025-12-16T09:18:00.000Z"
@@ -520,13 +511,11 @@ interface UnifiedMatch {
   startTime?: string;            // 开始时间（ISO 8601）
   poly: PolymarketData;          // Polymarket 数据
   espn: ESPNData;                // ESPN 数据
-  hupu: HupuScoreData;           // 虎扑数据
   signals: ArbitrageSignal[];    // 套利信号
   lastUpdate: number;            // 最后更新时间戳
   dataCompleteness: {
     hasPolyData: boolean;
     hasESPNData: boolean;
-    hasHupuData: boolean;
   };
 }
 ```
@@ -592,18 +581,6 @@ interface ESPNData {
   pregameHomeWinProb: number;    // 主队赛前胜率 (0-1)
   pregameAwayWinProb: number;    // 客队赛前胜率 (0-1)
   injuries?: InjuryReport[];     // 伤病报告
-}
-```
-
-### HupuScoreData（虎扑数据）
-
-```typescript
-interface HupuScoreData {
-  homeScore: number;       // 主队比分
-  awayScore: number;       // 客队比分
-  quarter: string;         // 节次: "Q1", "Q2", "Q3", "Q4", "OT", "FINAL"
-  timeRemaining: string;   // 剩余时间: "05:30"
-  status: MatchStatus;     // 比赛状态
 }
 ```
 
@@ -864,4 +841,4 @@ REDIS_PORT=6379
 - [开发文档](./DEVELOPMENT.md)
 - [WebSocket 说明](./WEBSOCKET.md)
 - [实时数据文档](./REALTIME_DATA.md)
-- [虎扑 API 说明](./HUPU_API.md)
+- [ESPN API](https://site.api.espn.com/apis/site/v2/sports/basketball/nba) - ESPN 数据源

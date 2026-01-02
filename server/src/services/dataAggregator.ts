@@ -254,11 +254,11 @@ class DataAggregator {
       let timeValid = true;
       if (polyData.endDate && match.startTime) {
         const polyEndTime = new Date(polyData.endDate).getTime();
-        const hupuStartTime = new Date(match.startTime).getTime();
+        const startTime = new Date(match.startTime).getTime();
         
         // 只有当 endDate 明显早于 startTime 时才拒绝（允许相等）
-        if (polyEndTime < hupuStartTime) {
-          logger.warn(`[Layer 3] ⚠️ 时间校验失败: Polymarket endDate (${polyData.endDate}) < Hupu startTime (${match.startTime})`);
+        if (polyEndTime < startTime) {
+          logger.warn(`[Layer 3] ⚠️ 时间校验失败: Polymarket endDate (${polyData.endDate}) < startTime (${match.startTime})`);
           timeValid = false;
         } else {
           logger.debug(`[Layer 3] ✅ 时间校验通过: endDate >= startTime`);
@@ -395,19 +395,11 @@ class DataAggregator {
         pregameHomeWinProb: 0,
         pregameAwayWinProb: 0,
       },
-      hupu: {
-        homeScore: 0,
-        awayScore: 0,
-        quarter: '',
-        timeRemaining: '',
-        status: MatchStatus.PRE,
-      },
       signals: [],
       lastUpdate: Date.now(),
       dataCompleteness: {
         hasPolyData: false,
         hasESPNData: false,
-        hasHupuData: false,
       },
     };
   }
@@ -430,37 +422,31 @@ class DataAggregator {
     if (statusType === 'pre') {
       match.status = MatchStatus.PRE;
       match.statusStr = '未开始';
-      match.hupu.quarter = '';
     } else if (statusType === 'in') {
       match.status = MatchStatus.LIVE;
       const period = espnGame.status?.period || 0;
       const clock = espnGame.status?.displayClock || '';
       
-      // 设置 quarter 字段（用于套利引擎判断）
+      // 设置状态字符串
+      let quarterStr = '';
       if (period === 5) {
-        match.hupu.quarter = 'OT';
+        quarterStr = 'OT';
       } else if (period >= 1 && period <= 4) {
-        match.hupu.quarter = `Q${period}`;
-      } else {
-        match.hupu.quarter = '';
+        quarterStr = `Q${period}`;
       }
       
-      match.statusStr = `${match.hupu.quarter} ${clock}`;
-      match.hupu.timeRemaining = clock;
+      match.statusStr = `${quarterStr} ${clock}`;
     } else if (statusType === 'post') {
       match.status = MatchStatus.FINAL;
       match.statusStr = '已结束';
-      match.hupu.quarter = 'FINAL';
     }
-
-    match.dataCompleteness.hasHupuData = true;
   }
 
   /**
    * 使用 ESPN 队名搜索 Polymarket
    */
   private async searchPolymarketByESPNTeams(homeTeamName: string, awayTeamName: string): Promise<any> {
-    // 将 ESPN 队名转换为虎扑中文名（用于 Polymarket 搜索）
+    // 将 ESPN 队名转换为中文名（用于 Polymarket 搜索）
     const homeTeam = NBA_TEAMS.find(t => t.espnName === homeTeamName);
     const awayTeam = NBA_TEAMS.find(t => t.espnName === awayTeamName);
 
@@ -469,7 +455,7 @@ class DataAggregator {
       return null;
     }
 
-    return polymarketService.searchNBAMarkets(homeTeam.hupuName, awayTeam.hupuName);
+    return polymarketService.searchNBAMarkets(homeTeam.chineseName, awayTeam.chineseName);
   }
 
 

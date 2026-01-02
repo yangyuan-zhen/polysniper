@@ -29,12 +29,12 @@ class ArbitrageEngine {
     }
 
     // 铁律：只做前三节（Q1-Q3）
+    // 注意：移除虎扑数据源后，无法通过 quarter 判断比赛阶段
+    // 暂时禁用此逻辑，直到找到替代数据源
     if (match.status === MatchStatus.LIVE) {
-      const quarter = match.hupu.quarter;
-      if (quarter === 'Q4' || quarter === 'OT') {
-        logger.info(`⛔ [套利引擎] 跳过第四节/加时 ${match.homeTeam.name} vs ${match.awayTeam.name} (${quarter})`);
-        return signals; // 第四节是赌博逻辑，不参与
-      }
+      logger.info(`⚠️ [套利引擎] 虎扑数据已移除，无法判断比赛季度 ${match.homeTeam.name} vs ${match.awayTeam.name}`);
+      // TODO: 需要替代方案来判断比赛阶段
+      return signals;
     }
 
     // 检查数据完整性
@@ -98,15 +98,8 @@ class ArbitrageEngine {
     let confidence = Math.min(0.5 + profitMargin * 3, 0.95); // 10%起步=0.8，20%=0.95
 
     // 时间因素：前三节，时间越多越好（时间是我们的盟友）
-    if (match.status === MatchStatus.LIVE) {
-      const quarter = match.hupu.quarter;
-      if (quarter === 'Q1') {
-        confidence = Math.min(confidence * 1.1, 0.95); // Q1奖励10%
-      } else if (quarter === 'Q2') {
-        confidence = Math.min(confidence * 1.05, 0.95); // Q2奖励5%
-      }
-      // Q3保持原样
-    }
+    // 注意：移除虎扑数据源后，无法获取 quarter 和 timeRemaining
+    // TODO: 需要替代数据源来计算时间因素
 
     // 生成信号
     const scoreDiff = isHome 
@@ -124,7 +117,7 @@ class ArbitrageEngine {
         polyPrice: buyPrice, // 使用 bestAsk 作为价格
         priceDiff: profitMargin,
         scoreDiff,
-        timeRemaining: match.hupu.timeRemaining,
+        timeRemaining: 'N/A', // 虎扑数据已移除
       },
     };
   }

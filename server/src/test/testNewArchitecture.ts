@@ -61,17 +61,6 @@ async function testNewArchitecture() {
         console.log(`      - 主队胜率: ${(espnData.homeWinProb * 100).toFixed(1)}%`);
         console.log(`      - 客队胜率: ${(espnData.awayWinProb * 100).toFixed(1)}%`);
         console.log(`      - 赛前主队: ${(espnData.pregameHomeWinProb * 100).toFixed(1)}%`);
-        console.log(`      - 伤病数量: ${espnData.injuries?.length || 0}`);
-        
-        if (espnData.injuries && espnData.injuries.length > 0) {
-          console.log(`\n   伤病列表:`);
-          espnData.injuries.slice(0, 3).forEach((injury: any, idx: number) => {
-            console.log(`      ${idx + 1}. ${injury.athlete?.displayName} (${injury.team?.displayName}) - ${injury.status}`);
-          });
-          if (espnData.injuries.length > 3) {
-            console.log(`      ... 还有 ${espnData.injuries.length - 3} 人`);
-          }
-        }
       } else {
         console.log(`   ❌ 未获取到 ESPN 数据`);
       }
@@ -82,8 +71,8 @@ async function testNewArchitecture() {
       
       if (homeTeam && awayTeam) {
         console.log(`\n   队名映射:`);
-        console.log(`      - ${home?.team?.displayName} → ${homeTeam.hupuName}`);
-        console.log(`      - ${away?.team?.displayName} → ${awayTeam.hupuName}`);
+        console.log(`      - ${home?.team?.displayName} → 中文名`);
+        console.log(`      - ${away?.team?.displayName} → 中文名`);
       } else {
         console.log(`\n   ⚠️  队名映射不完整`);
       }

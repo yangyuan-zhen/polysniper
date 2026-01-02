@@ -29,12 +29,6 @@ export const config = {
     updateInterval: 10000, // 10秒更新一次
   },
   
-  // 虎扑 API
-  hupu: {
-    apiUrl: 'https://games.mobileapi.hupu.com/1/7.5.60/basketballapi',
-    updateInterval: 3000, // 3秒更新一次（比分数据）
-  },
-  
   // Redis配置
   redis: {
     url: process.env.REDIS_URL || 'redis://localhost:6379',

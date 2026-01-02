@@ -14,7 +14,7 @@ interface TeamMapping {
   espnId: string;       // ESPN 球队 ID
   espnName: string;     // ESPN 英文全名 (如 "Los Angeles Lakers")
   espnAbbr: string;     // ESPN 缩写 (如 "LAL")
-  hupuName: string;     // 虎扑中文名 (如 "湖人")
+  chineseName: string;   // 中文名 (如 "湖人")
   polyKeywords: string[]; // Polymarket 关键词列表
   conference: 'East' | 'West'; // 分区
   division: string;     // 赛区
@@ -54,7 +54,7 @@ Polymarket 市场的问题描述**通常省略城市名**，只使用核心队�
   espnId: '13',
   espnName: 'Los Angeles Lakers',
   espnAbbr: 'LAL',
-  hupuName: '湖人',
+  chineseName: '湖人',
   polyKeywords: ['Lakers', 'LAL', 'LA Lakers', 'L.A. Lakers', 'Los Angeles Lakers'],
   conference: 'West',
   division: 'Pacific',
@@ -76,7 +76,7 @@ Polymarket 市场的问题描述**通常省略城市名**，只使用核心队�
   espnId: '14',
   espnName: 'Miami Heat',
   espnAbbr: 'MIA',
-  hupuName: '热火',
+  chineseName: '热火',
   polyKeywords: ['Heat', 'MIA', 'Miami Heat'],
   conference: 'East',
   division: 'Southeast',
@@ -101,12 +101,12 @@ const team = findTeamByESPNName('Los Angeles Lakers');
 // 返回: TeamMapping { id: 'LAL', ... }
 ```
 
-### 2. 根据虎扑名称查找球队
+### 2. 根据中文名称查找球队
 
 ```typescript
-import { findTeamByHupuName } from './config/teamMappings';
+import { findTeamByChineseName } from './config/teamMappings';
 
-const team = findTeamByHupuName('湖人');
+const team = findTeamByChineseName('湖人');
 // 返回: TeamMapping { id: 'LAL', ... }
 ```
 
@@ -143,7 +143,7 @@ const { home, away } = matchTeams('Lakers', 'Warriors', 'poly');
   espnId: 'XX',
   espnName: 'New Team Name',
   espnAbbr: 'NEW',
-  hupuName: '新队名',
+  chineseName: '新队名',
   polyKeywords: [
     'CoreName',      // 核心队名（最重要）
     'NEW',           // 缩写
@@ -264,4 +264,3 @@ polyKeywords: [
 
 - [API.md](./API.md) - API 接口文档
 - [DEVELOPMENT.md](./DEVELOPMENT.md) - 开发指南
-- [虎扑 API 说明](./HUPU_API.md)

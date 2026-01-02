@@ -6,13 +6,8 @@ Node.js 后端服务，为 PolySniper NBA 预测市场监控系统提供数据�
 
 - **[API.md](./API.md)** - 📡 REST API & WebSocket 接口完整说明（含示例代码）⭐ **推荐**
 - **[docs/PRICE_RETRIEVAL.md](./docs/PRICE_RETRIEVAL.md)** - 💰 Polymarket 价格获取指南 ⭐ **NEW**
-- **[docs/MATCHING_LOGIC.md](./docs/MATCHING_LOGIC.md)** - 🎯 三层漏斗匹配逻辑详解 ⭐ **NEW**
-- **[docs/PARALLEL_OPTIMIZATION.md](./docs/PARALLEL_OPTIMIZATION.md)** - ⚡ 并行请求优化（性能提升60%）⭐ **NEW**
-- **[docs/DATA_SOURCE_COMPARISON.md](./docs/DATA_SOURCE_COMPARISON.md)** - 📊 数据源对比分析
 - **[DEVELOPMENT.md](./DEVELOPMENT.md)** - 🛠️ 开发指南和架构说明
 - **[TEAM_MAPPINGS.md](./TEAM_MAPPINGS.md)** - 🏀 NBA 球队映射配置说明
-- **[HUPU_API.md](./HUPU_API.md)** - 🏀 虎扑 API 详细说明
-- **[REALTIME_DATA.md](./REALTIME_DATA.md)** - ⚡ 实时数据采集流程
 - **[WEBSOCKET.md](./WEBSOCKET.md)** - 🔌 WebSocket 使用说明
 - **[FINAL_SUMMARY.md](./FINAL_SUMMARY.md)** - 📝 项目完成总结
 
@@ -21,11 +16,10 @@ Node.js 后端服务，为 PolySniper NBA 预测市场监控系统提供数据�
 ## 🎯 核心功能
 
 ### 数据整合
-- **虎扑 API**: 实时比分数据（3秒更新）
-- **ESPN API**: 赛前/赛中胜率、球员伤病信息（10秒更新）
+- **ESPN API**: 实时比分和胜率数据（10秒更新）
 - **Polymarket API**: 市场价格、流动性数据（WebSocket实时推送）
-- **并行请求优化**: 同时获取三个数据源，性能提升 60% ⚡
-- **三层漏斗匹配**: 精准匹配虎扑、ESPN、Polymarket 三个数据源的比赛数据
+- **并行请求优化**: 同时获取多个数据源，性能提升 60% ⚡
+- **智能匹配算法**: 精准匹配 ESPN 和 Polymarket 数据源的比赛数据
   - Layer 1: 范围锁定（NBA + active + 未关闭）
   - Layer 2: 名称锚定（同时匹配两队名，不区分主客场）
   - Layer 3: 时间校验（防止匹配错误）
@@ -200,12 +194,7 @@ interface UnifiedMatch {
     injuries?: InjuryReport[];  // 伤病信息
   };
   
-  hupu: {                  // 虎扑数据
-    homeScore: number;
-    awayScore: number;
-    quarter: string;       // "Q4", "OT", "FINAL"
-    timeRemaining: string; // "05:30"
-  };
+  // 注意：虎扑数据源已移除，现在完全使用 ESPN + Polymarket
   
   signals: ArbitrageSignal[]; // 套利信号
   
@@ -213,7 +202,6 @@ interface UnifiedMatch {
   dataCompleteness: {
     hasPolyData: boolean;
     hasESPNData: boolean;
-    hasHupuData: boolean;
   };
 }
 ```
@@ -278,7 +266,6 @@ polysniper-backend/
 │   │   └── cache.ts      # 缓存服务
 │   ├── services/         # 业务服务
 │   │   ├── espnService.ts         # ESPN数据采集
-│   │   ├── hupuService.ts         # 虎扑数据采集
 │   │   ├── polymarketService.ts   # Polymarket数据采集
 │   │   ├── arbitrageEngine.ts     # 套利计算引擎
 │   │   └── dataAggregator.ts      # 数据整合服务

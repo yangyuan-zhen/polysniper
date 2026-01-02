@@ -5,8 +5,6 @@
 - **[API.md](./API.md)** - REST API 和 WebSocket 接口完整说明 ⭐ **推荐先看**
 - **[DEVELOPMENT.md](./DEVELOPMENT.md)** - 本文档，开发指南
 - **[TEAM_MAPPINGS.md](./TEAM_MAPPINGS.md)** - NBA 球队映射配置说明 ⭐ **NEW**
-- **[HUPU_API.md](./HUPU_API.md)** - 虎扑 API 详细说明
-- **[REALTIME_DATA.md](./REALTIME_DATA.md)** - 实时数据采集流程
 - **[WEBSOCKET.md](./WEBSOCKET.md)** - WebSocket 使用说明
 - **[FINAL_SUMMARY.md](./FINAL_SUMMARY.md)** - 项目完成总结
 
@@ -15,7 +13,7 @@
 ## 📋 项目概述
 
 本项目是 PolySniper 的后端服务，负责：
-- 整合多个数据源（虎扑、ESPN、Polymarket）
+- 整合多个数据源（ESPN、Polymarket）
 - 计算套利信号
 - 提供 REST API 和 WebSocket 实时推送
 
@@ -29,16 +27,11 @@
 - [x] PM2 进程管理配置
 
 ### 2. 核心服务 ✓
-- [x] **虎扑服务** (`src/services/hupuService.ts`)
+- [x] **ESPN 服务** (`src/services/espnService.ts`)
   - 获取 NBA 赛程
   - 实时比分数据
+  - 胜率和伤病信息
   - 缓存优化
-
-- [x] **ESPN 服务** (`src/services/espnService.ts`)
-  - 比赛比分
-  - 实时胜率（winProbability）
-  - 赛前预测
-  - 球队信息
 
 - [x] **Polymarket 服务** (`src/services/polymarketService.ts`)
   - Gamma Markets API 集成（公开，无需认证）
@@ -104,7 +97,7 @@
 
 ```
 ✓ 缓存系统: 正常（内存模式）
-⚠ 虎扑 API: 暂无比赛数据（休赛期）
+⚠ ESPN API: 暂无比赛数据（休赛期）
 ✓ ESPN API: 正常（获取8场比赛）
 ✓ Polymarket API: 正常连接
 ✓ 套利引擎: 就绪
@@ -112,7 +105,7 @@
 
 ### 当前限制
 
-1. **虎扑 API**: 今天没有比赛（可能是休赛期或非比赛日）
+1. **ESPN API**: 今天没有比赛（可能是休赛期或非比赛日）
 2. **Polymarket 市场**: 未找到当前活跃的 NBA 比赛市场
    - Gamma API 返回的主要是历史或非体育市场
    - 可能需要在比赛日才能找到匹配的市场
@@ -157,8 +150,8 @@ docker run -p 3000:3000 --env-file .env polysniper-backend
 │                   外部 API 数据源                        │
 ├─────────────────────────────────────────────────────────┤
 │                                                          │
-│  虎扑 API          ESPN API         Polymarket Gamma     │
-│  (比分)            (胜率)           (市场价格)            │
+│  ESPN API         Polymarket Gamma     数据聚合器        │
+│  (比分+胜率)       (市场价格)           (整合处理)         │
 │     │                 │                   │              │
 │     └─────────────────┴───────────────────┘              │
 │                       │                                  │
@@ -279,8 +272,7 @@ CORS_ORIGIN=http://localhost:5173
 ## 🔗 相关资源
 
 - [Polymarket 官方文档](https://docs.polymarket.com)
-- [ESPN API](http://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard)
-- [虎扑 API](https://games.mobileapi.hupu.com)
+- [ESPN API](https://site.api.espn.com/apis/site/v2/sports/basketball/nba)
 - [前端项目](https://github.com/yangyuan-zhen/polysniper)
 
 ## 💡 开发建议

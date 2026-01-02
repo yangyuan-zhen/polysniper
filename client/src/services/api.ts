@@ -82,7 +82,6 @@ export async function fetchStats(): Promise<{
   dataCompleteness: {
     withPolyData: number;
     withESPNData: number;
-    withHupuData: number;
   };
 }> {
   const response = await fetch(`${API_BASE}/stats`);

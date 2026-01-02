@@ -11,7 +11,7 @@
 - ✅ 创建 30 支 NBA 球队完整配置 (`src/config/teamMappings.ts`)
 - ✅ 支持中英文名称映射
 - ✅ 提供多种搜索方法：
-  - `findTeamByHupuName()` - 虎扑中文名查找
+  - `findTeamByChineseName()` - 中文名查找
   - `findTeamByESPNName()` - ESPN 英文名查找
   - `findTeamByPolyKeyword()` - Polymarket 关键词查找
   - `matchTeams()` - 智能匹配
@@ -59,11 +59,11 @@ npm run test:quick
 
 ### 1. 数据采集
 ```typescript
-// 虎扑 - 实时比分
-hupuService.getSchedule()
-hupuService.getGameByTeams(home, away)
+// ESPN - 赛程和胜率
+espnService.getSchedule()
+espnService.getGameWinProbability(gameId)
 
-// ESPN - 胜率和伤病
+// ESPN - 详细数据
 espnService.getScoreboard()
 espnService.getWinProbabilityByTeams(home, away)
 
@@ -122,7 +122,6 @@ polysniper-backend/
 │   │   └── matchIdGenerator.ts   ✅ 比赛ID生成
 │   ├── services/
 │   │   ├── espnService.ts        ✅ ESPN数据采集
-│   │   ├── hupuService.ts        ✅ 虎扑数据采集
 │   │   ├── polymarketService.ts  ✅ Polymarket数据采集
 │   │   ├── arbitrageEngine.ts    ✅ 套利计算引擎
 │   │   └── dataAggregator.ts     ✅ 数据整合服务

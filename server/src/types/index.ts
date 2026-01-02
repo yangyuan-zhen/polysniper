@@ -28,6 +28,7 @@ export interface ESPNData {
   awayWinProb: number;      // 客队实时胜率（进行中）
   pregameHomeWinProb: number; // 主队赛前胜率
   pregameAwayWinProb: number; // 客队赛前胜率
+  injuries?: any[];         // 伤病报告数据
 }
 
 // Polymarket 市场数据
@@ -47,14 +48,6 @@ export interface PolymarketData {
   endDate?: string;         // 市场结束时间（用于 Layer 3 时间校验）
 }
 
-// 虎扑比分数据
-export interface HupuScoreData {
-  homeScore: number;
-  awayScore: number;
-  quarter: string;          // "Q4", "OT", "FINAL"
-  timeRemaining: string;    // "05:30"
-  status: MatchStatus;
-}
 
 // 套利信号
 export interface ArbitrageSignal {
@@ -92,9 +85,6 @@ export interface UnifiedMatch {
   // ESPN 数据
   espn: ESPNData;
   
-  // 虎扑比分数据
-  hupu: HupuScoreData;
-  
   // 套利信号（后端计算）
   signals: ArbitrageSignal[];
   
@@ -103,7 +93,6 @@ export interface UnifiedMatch {
   dataCompleteness: {      // 数据完整性标记
     hasPolyData: boolean;
     hasESPNData: boolean;
-    hasHupuData: boolean;
   };
 }
 

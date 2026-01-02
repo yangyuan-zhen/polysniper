@@ -26,13 +26,6 @@ export interface ESPNData {
   injuries?: any[];
 }
 
-export interface HupuScoreData {
-  homeScore: number;
-  awayScore: number;
-  quarter: string;
-  timeRemaining: string;
-  status: MatchStatus;
-}
 
 export type MatchStatus = 'PRE' | 'LIVE' | 'FINAL';
 
@@ -62,13 +55,11 @@ export interface UnifiedMatch {
   startTime?: string;
   poly: PolymarketData;
   espn: ESPNData;
-  hupu: HupuScoreData;
   signals: ArbitrageSignal[];
   lastUpdate: number;
   dataCompleteness: {
     hasPolyData: boolean;
     hasESPNData: boolean;
-    hasHupuData: boolean;
   };
 }
 

@@ -171,7 +171,7 @@ class DataAggregator {
 interface TeamMapping {
   espnName: string;      // "Boston Celtics"
   espnId: string;        // "2"
-  hupuName: string;      // "凯尔特人" (用于 Polymarket 搜索)
+  chineseName: string;      // "凯尔特人" (用于 Polymarket 搜索)
   polyKeywords: string[]; // ["Celtics", "BOS"]
 }
 ```
@@ -180,7 +180,7 @@ interface TeamMapping {
 ```
 ESPN "Boston Celtics" 
   → 查找映射表
-  → hupuName "凯尔特人"
+  → chineseName "凯尔特人"
   → Polymarket API 搜索
 ```
 

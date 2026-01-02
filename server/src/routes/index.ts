@@ -154,7 +154,6 @@ router.get('/api/stats', (req, res) => {
         dataCompleteness: {
           withPolyData: allMatches.filter(m => m.dataCompleteness.hasPolyData).length,
           withESPNData: allMatches.filter(m => m.dataCompleteness.hasESPNData).length,
-          withHupuData: allMatches.filter(m => m.dataCompleteness.hasHupuData).length,
         },
       },
       timestamp: new Date().toISOString(),

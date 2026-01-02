@@ -211,11 +211,9 @@ confidence = (
 - **更新频率**：10秒轮询
 - **代理需求**：需要 VPN/Clash
 
-#### 虎扑 API
-- **Endpoint**：`/api/hupu/1/7.5.60/basketballapi/scheduleList`
-- **代理需求**：Vite 代理到 `https://games.mobileapi.hupu.com`
-
 #### ESPN API
+- **Endpoint**：`/api/espn/scoreboard`
+- **数据源**：ESPN API
 - **Scoreboard**：`site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard`
 - **Summary**：`site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event={gameId}`
 - **Injuries**：`site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{teamId}`
@@ -225,7 +223,7 @@ confidence = (
 ## 4. 用户交互流程
 
 ### 4.1 首次加载
-1. 获取今日比赛列表（虎扑 API）
+1. 获取今日比赛列表（ESPN API）
 2. 匹配 Polymarket 市场数据
 3. 启动定时轮询（每 10 秒刷新）
 
@@ -309,4 +307,4 @@ confidence = (
 
 - [Polymarket CLOB API 文档](https://docs.polymarket.com)
 - [ESPN 隐藏 API](https://gist.github.com/akeaswaran/b48b02f1c94f873c6655e7129910fc3b)
-- [虎扑移动 API](https://games.mobileapi.hupu.com)
+- [ESPN API](https://site.api.espn.com/apis/site/v2/sports/basketball/nba)

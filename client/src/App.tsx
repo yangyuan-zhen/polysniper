@@ -151,7 +151,20 @@ function App() {
     };
 
     const handleMatchesUpdate = (data: any) => {
-      console.log(`[App] 📊 收到比赛更新 (${data.type}):`, data.data.length, '场比赛', new Date().toLocaleTimeString());
+      const now = new Date().toLocaleTimeString();
+      console.log(`[App] 📊 收到比赛更新 (${data.type}):`, data.data.length, '场比赛', now);
+      
+      // 打印所有比赛的价格信息用于调试
+      if (data.data.length > 0) {
+        console.log('[App] 💰 当前所有比赛价格:');
+        data.data.forEach((match: any, index: number) => {
+          if (match.poly?.homePrice && match.poly?.awayPrice) {
+            console.log(`  ${index + 1}. ${match.homeTeam.name} $${match.poly.homePrice.toFixed(4)} vs ${match.awayTeam.name} $${match.poly.awayPrice.toFixed(4)} (更新: ${new Date(match.lastUpdate).toLocaleTimeString()})`);
+          }
+        });
+      }
+      
+      // 直接使用后端发送的数据（已经是深度克隆的）
       setMatches(data.data);
       setLoading(false);
     };

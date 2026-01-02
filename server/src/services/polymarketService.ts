@@ -74,7 +74,6 @@ class PolymarketService {
       this.ws.on('message', (data: WebSocket.Data) => {
         try {
           const rawMessage = data.toString();
-          logger.debug(`📥 原始消息: ${rawMessage.slice(0, 200)}`);
           
           // 处理非 JSON 消息（如 "INVALID OPERATION"）
           if (!rawMessage.startsWith('{') && !rawMessage.startsWith('[')) {
@@ -83,6 +82,15 @@ class PolymarketService {
           }
           
           const message = JSON.parse(rawMessage);
+          
+          // 提高价格更新日志级别，确保能看到
+          const event_type = message.event_type || message.type;
+          if (event_type === 'price_change' || event_type === 'book') {
+            logger.info(`📥 收到 Polymarket 消息: ${event_type}`);
+          } else {
+            logger.debug(`📥 收到消息: ${rawMessage.slice(0, 200)}`);
+          }
+          
           this.handleMessage(message);
         } catch (error) {
           logger.error('Failed to parse WebSocket message:', error);
@@ -210,7 +218,7 @@ class PolymarketService {
       if (price) {
         const priceValue = parseFloat(price);
         logger.info(`📖 订单簿 [${asset_id.slice(0, 8)}...]: $${priceValue.toFixed(4)}`);
-        this.updatePriceCache(asset_id, priceValue);
+        this.updatePrice(asset_id, priceValue);
       }
     }
     
@@ -223,7 +231,7 @@ class PolymarketService {
         if (asset_id && price) {
           const priceValue = parseFloat(price);
           logger.info(`📈 价格更新 [${asset_id.slice(0, 8)}...]: $${priceValue.toFixed(4)} (${change.side})`);
-          this.updatePriceCache(asset_id, priceValue);
+          this.updatePrice(asset_id, priceValue);
         }
       });
     }
@@ -372,8 +380,8 @@ class PolymarketService {
 
       const data = response.data;
       
-      // 缓存45秒
-      await cache.set(cacheKey, data, 45);
+      // 缓存10秒（减少缓存时间，配合 WebSocket 实时更新）
+      await cache.set(cacheKey, data, 10);
       
       logger.debug('已获取 Polymarket 市场数据');
       return data;
@@ -401,8 +409,8 @@ class PolymarketService {
 
       const data = response.data;
       
-      // 缓存45秒
-      await cache.set(cacheKey, data, 45);
+      // 缓存10秒（减少缓存时间，配合 WebSocket 实时更新）
+      await cache.set(cacheKey, data, 10);
       
       return data;
     } catch (error) {
@@ -412,41 +420,21 @@ class PolymarketService {
   }
 
   /**
-   * 获取 token 价格
-   * @deprecated 已弃用 - 现在使用 WebSocket 实时推送价格，不再使用 REST API 轮询
-   * 保留此方法作为备用方案（WebSocket 连接失败时的降级方案）
+   * 更新价格并触发订阅者回调（WebSocket 实时推送）
    */
-  async getTokenPrice(tokenId: string): Promise<number> {
-    try {
-      const cacheKey = `${CacheKey.POLY_PRICES}:${tokenId}`;
-      const cached = await cache.get<number>(cacheKey);
-      if (cached !== null) {
-        return cached;
-      }
-
-      // Gamma API 是公开的，不需要认证
-      const response = await axios.get(`${this.gammaApiUrl}/prices/${tokenId}`, {
-        timeout: 10000,
+  private updatePrice(tokenId: string, price: number): void {
+    // 🔔 触发订阅者回调
+    const callbacks = this.subscribers.get(tokenId);
+    if (callbacks && callbacks.size > 0) {
+      logger.debug(`🔔 触发 ${callbacks.size} 个订阅者回调 [${tokenId.slice(0, 8)}...] price=$${price.toFixed(4)}`);
+      callbacks.forEach(callback => {
+        try {
+          callback({ price, tokenId });
+        } catch (error) {
+          logger.error(`订阅者回调执行失败:`, error);
+        }
       });
-
-      const price = response.data.price;
-      
-      // 缓存10秒
-      await cache.set(cacheKey, price, 10);
-      
-      return price;
-    } catch (error) {
-      logger.error(`Failed to fetch price for token ${tokenId}:`, error);
-      return 0;
     }
-  }
-
-  /**
-   * 更新价格缓存
-   */
-  private async updatePriceCache(tokenId: string, price: number): Promise<void> {
-    const cacheKey = `${CacheKey.POLY_PRICES}:${tokenId}`;
-    await cache.set(cacheKey, price, 10);
   }
 
   /**
@@ -691,7 +679,8 @@ class PolymarketService {
       homeTokenId = tokenIds[homeIndex] || '';
       awayTokenId = tokenIds[awayIndex] || '';
       
-      logger.debug(`解析成功: ${outcomes[homeIndex]}=$${homePrice}, ${outcomes[awayIndex]}=$${awayPrice}`);
+      // 使用 REST API 价格作为初始值，后续通过 WebSocket 实时更新
+      logger.debug(`解析成功: ${outcomes[homeIndex]}=$${homePrice.toFixed(4)}, ${outcomes[awayIndex]}=$${awayPrice.toFixed(4)}`);
 
       return {
         marketId: market.conditionId || market.condition_id || market.id || '',

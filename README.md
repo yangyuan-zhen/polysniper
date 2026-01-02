@@ -99,10 +99,10 @@ npm start
 ## 📊 数据更新机制
 
 ### Polymarket 价格
-- **WebSocket 实时推送** ⚡ **（已实现）**
-- 延迟 < 1秒
+- **WebSocket 实时推送** ⚡ **（已优化）**
+- 延迟 < 1秒（实时推送价格更新）
+- 混合模式：WebSocket 推送 + REST API 市场结构（10秒缓存）
 - 使用协议层 Ping/Pong 心跳（每15秒）
-- REST API 轮询作为备用（45秒）
 
 ### ESPN 比赛信息
 - **动态轮询频率**:

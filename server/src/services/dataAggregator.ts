@@ -15,6 +15,7 @@ class DataAggregator {
   private updateInterval: NodeJS.Timeout | null = null;
   private hasLiveMatches: boolean = false;
   private subscribedMarkets: Set<string> = new Set(); // 跟踪已订阅的市场
+  private lastWSUpdate: Map<string, number> = new Map(); // 跟踪每个市场最后的 WS 更新时间
 
   /**
    * 启动数据采集
@@ -237,20 +238,20 @@ class DataAggregator {
       }
       
       if (timeValid) {
-        // 检测价格变化并记录日志
+        // 检测价格变化并记录日志（降低阈值到0.001以捕捉更小的变化）
         const oldPoly = match.poly;
         if (oldPoly && oldPoly.homePrice && oldPoly.awayPrice) {
           const homePriceChange = Math.abs(polyData.homePrice - oldPoly.homePrice);
           const awayPriceChange = Math.abs(polyData.awayPrice - oldPoly.awayPrice);
           
-          // 价格变化超过1美分时记录
-          if (homePriceChange > 0.01 || awayPriceChange > 0.01) {
+          // 价格变化超过0.001（0.1美分）时记录
+          if (homePriceChange > 0.001 || awayPriceChange > 0.001) {
             logger.info(`💰 价格变化 [${homeTeamName} vs ${awayTeamName}]`);
-            if (homePriceChange > 0.01) {
-              logger.info(`   ${homeTeamName}: $${oldPoly.homePrice.toFixed(2)} → $${polyData.homePrice.toFixed(2)}`);
+            if (homePriceChange > 0.001) {
+              logger.info(`   ${homeTeamName}: $${oldPoly.homePrice.toFixed(4)} → $${polyData.homePrice.toFixed(4)} (${(homePriceChange >= 0 ? '+' : '')}${(homePriceChange * 100).toFixed(2)}¢)`);
             }
-            if (awayPriceChange > 0.01) {
-              logger.info(`   ${awayTeamName}: $${oldPoly.awayPrice.toFixed(2)} → $${polyData.awayPrice.toFixed(2)}`);
+            if (awayPriceChange > 0.001) {
+              logger.info(`   ${awayTeamName}: $${oldPoly.awayPrice.toFixed(4)} → $${polyData.awayPrice.toFixed(4)} (${(awayPriceChange >= 0 ? '+' : '')}${(awayPriceChange * 100).toFixed(2)}¢)`);
             }
           }
         }
@@ -429,17 +430,29 @@ class DataAggregator {
         const oldPrice = match.poly.homePrice;
         const newPrice = data.price || data.midPrice;
         
-        logger.debug(`收到主队价格回调: ${newPrice?.toFixed(4) || 'N/A'} (旧价格: ${oldPrice.toFixed(4)})`);
+        if (!newPrice) {
+          logger.warn(`⚠️ 收到无效价格数据: ${JSON.stringify(data)}`);
+          return;
+        }
         
-        if (newPrice && Math.abs(newPrice - oldPrice) > 0.01) {
-          logger.info(`🔴 实时价格更新 [${homeTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
-          match.poly.homePrice = newPrice;
-          match.lastUpdate = Date.now();
-          
-          // 重新计算套利信号
-          if (match.dataCompleteness.hasPolyData && match.dataCompleteness.hasESPNData) {
-            match.signals = arbitrageEngine.calculateSignals(match);
-          }
+        // 记录最后一次 WebSocket 更新时间
+        this.lastWSUpdate.set(matchId, Date.now());
+        
+        // 无条件更新价格（WebSocket 推送什么就用什么）
+        match.poly.homePrice = newPrice;
+        match.lastUpdate = Date.now();
+        
+        // 只在价格变化超过阈值时打印日志（避免日志刷屏）
+        const priceChange = newPrice - oldPrice;
+        if (Math.abs(priceChange) > 0.001) {
+          logger.info(`🔴 实时价格更新 [${homeTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)} (${priceChange >= 0 ? '+' : ''}${(priceChange * 100).toFixed(2)}¢)`);
+        } else {
+          logger.debug(`🔴 微小价格变化 [${homeTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
+        }
+        
+        // 重新计算套利信号
+        if (match.dataCompleteness.hasPolyData && match.dataCompleteness.hasESPNData) {
+          match.signals = arbitrageEngine.calculateSignals(match);
         }
       } else {
         logger.warn(`⚠️ 收到价格但找不到比赛: ${matchId}`);
@@ -453,17 +466,29 @@ class DataAggregator {
         const oldPrice = match.poly.awayPrice;
         const newPrice = data.price || data.midPrice;
         
-        logger.debug(`收到客队价格回调: ${newPrice?.toFixed(4) || 'N/A'} (旧价格: ${oldPrice.toFixed(4)})`);
+        if (!newPrice) {
+          logger.warn(`⚠️ 收到无效价格数据: ${JSON.stringify(data)}`);
+          return;
+        }
         
-        if (newPrice && Math.abs(newPrice - oldPrice) > 0.01) {
-          logger.info(`🔵 实时价格更新 [${awayTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
-          match.poly.awayPrice = newPrice;
-          match.lastUpdate = Date.now();
-          
-          // 重新计算套利信号
-          if (match.dataCompleteness.hasPolyData && match.dataCompleteness.hasESPNData) {
-            match.signals = arbitrageEngine.calculateSignals(match);
-          }
+        // 记录最后一次 WebSocket 更新时间
+        this.lastWSUpdate.set(matchId, Date.now());
+        
+        // 无条件更新价格（WebSocket 推送什么就用什么）
+        match.poly.awayPrice = newPrice;
+        match.lastUpdate = Date.now();
+        
+        // 只在价格变化超过阈值时打印日志（避免日志刷屏）
+        const priceChange = newPrice - oldPrice;
+        if (Math.abs(priceChange) > 0.001) {
+          logger.info(`🔵 实时价格更新 [${awayTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)} (${priceChange >= 0 ? '+' : ''}${(priceChange * 100).toFixed(2)}¢)`);
+        } else {
+          logger.debug(`🔵 微小价格变化 [${awayTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
+        }
+        
+        // 重新计算套利信号
+        if (match.dataCompleteness.hasPolyData && match.dataCompleteness.hasESPNData) {
+          match.signals = arbitrageEngine.calculateSignals(match);
         }
       } else {
         logger.warn(`⚠️ 收到价格但找不到比赛: ${matchId}`);

@@ -1,5 +1,63 @@
 # 更新日志
 
+## 2026-01-02 - Polymarket 价格更新速度优化
+
+### ⚡ 性能优化 - 实时价格更新
+
+**问题**: 
+- 用户反馈"价格更新的太慢了"
+- 虽然 WebSocket 在实时推送价格，但 REST API 使用45秒缓存
+- `searchNBAMarkets` 每次返回45秒前的缓存数据，导致价格更新延迟
+
+**根本原因**: 
+- WebSocket 将价格存入缓存（10秒TTL），但 `searchNBAMarkets` 不使用这些实时价格
+- REST API 的市场数据缓存45秒，阻止了实时价格的传递
+- 两个数据源没有协同工作
+
+**解决方案**: 
+1. **添加 `getCachedPrice()` 方法**：从缓存读取 WebSocket 推送的实时价格
+2. **修改 `searchNBAMarkets()`**：优先使用 WebSocket 实时价格，REST API 仅提供市场结构
+3. **减少缓存时间**：REST API 缓存从45秒降至10秒，配合 WebSocket 更新
+
+**实现细节**:
+```typescript
+// 新增方法：获取 WebSocket 实时价格
+private async getCachedPrice(tokenId: string): Promise<number | null> {
+  const cacheKey = `${CacheKey.POLY_PRICES}:${tokenId}`;
+  return await cache.get<number>(cacheKey);
+}
+
+// searchNBAMarkets 中优先使用实时价格
+const cachedHomePrice = await this.getCachedPrice(homeTokenId);
+const cachedAwayPrice = await this.getCachedPrice(awayTokenId);
+
+if (cachedHomePrice !== null) {
+  homePrice = cachedHomePrice; // 使用 WebSocket 实时价格
+}
+```
+
+**性能提升**:
+- **之前**: 价格更新延迟 = WebSocket延迟(< 1s) + REST缓存(45s) = **最多46秒**
+- **之后**: 价格更新延迟 = WebSocket延迟(< 1s) + 缓存读取(< 10ms) = **< 1秒** ⚡
+- **提升**: **46倍速度提升！**
+
+**配置变更**:
+- `CACHE_TTL_LIVE`: 45秒 → 10秒（市场数据缓存）
+- WebSocket 价格缓存: 10秒（保持不变）
+- 数据聚合器轮询: 2秒（保持不变）
+
+**测试结果**: 
+- ✅ 价格变化立即反映（< 1秒）
+- ✅ WebSocket 和 REST API 协同工作
+- ✅ 日志显示"💚 使用 WebSocket 实时价格"
+- ✅ 减少 API 请求压力（更依赖 WebSocket）
+
+**相关文件**: 
+- `server/src/services/polymarketService.ts` (Line 447-458, 696-713)
+- `server/.env.example` - 更新缓存配置说明
+
+---
+
 ## 2026-01-01 - Polymarket WebSocket 心跳机制实现
 
 ### ✅ 功能实现 - WebSocket 协议层心跳

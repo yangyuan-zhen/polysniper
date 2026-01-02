@@ -80,16 +80,23 @@ export class WebSocketServer {
           .map(id => dataAggregator.getMatch(id))
           .filter(m => m !== null);
         
+        // 深度克隆确保前端能正确渲染
+        const clonedMatches = JSON.parse(JSON.stringify(matches));
+        
         socket.emit('matchesUpdate', {
           type: 'initial',
-          data: matches,
+          data: clonedMatches,
           timestamp: Date.now(),
         });
       } else {
         const matches = dataAggregator.getAllMatches();
+        
+        // 深度克隆确保前端能正确渲染
+        const clonedMatches = JSON.parse(JSON.stringify(matches));
+        
         socket.emit('matchesUpdate', {
           type: 'initial',
-          data: matches,
+          data: clonedMatches,
           timestamp: Date.now(),
         });
       }
@@ -102,12 +109,12 @@ export class WebSocketServer {
    * 启动实时推送
    */
   start(): void {
-    // 每1秒检查并推送更新（只在数据变化时）
+    // 每500毫秒检查并推送更新（更快响应价格变化）
     this.updateInterval = setInterval(() => {
       this.broadcastUpdates();
-    }, 1000);
+    }, 500);
 
-    logger.info('WebSocket 服务器已启动（更新检测: 1秒）');
+    logger.info('WebSocket 服务器已启动（更新检测: 500ms）');
   }
 
   /**
@@ -118,46 +125,55 @@ export class WebSocketServer {
       const matches = dataAggregator.getAllMatches();
       
       // 生成当前数据快照（用于比较）
-      // 注意：价格四舍五入到2位小数，胜率到1位小数
+      // 注意：价格使用4位小数提高精度，胜率使用3位小数
       const currentSnapshot = JSON.stringify(
         matches.map(m => ({
           id: m.id,
           status: m.status,
           homeScore: m.homeTeam.score,
           awayScore: m.awayTeam.score,
-          // 价格四舍五入到2位小数（0.01精度）
-          homePrice: m.poly?.homePrice ? Math.round(m.poly.homePrice * 100) / 100 : null,
-          awayPrice: m.poly?.awayPrice ? Math.round(m.poly.awayPrice * 100) / 100 : null,
-          // 胜率四舍五入到1位小数（0.1%精度）
+          // 价格四舍五入到4位小数（0.0001精度），捕捉更细微的变化
+          homePrice: m.poly?.homePrice ? Math.round(m.poly.homePrice * 10000) / 10000 : null,
+          awayPrice: m.poly?.awayPrice ? Math.round(m.poly.awayPrice * 10000) / 10000 : null,
+          // 胜率四舍五入到3位小数（0.001精度）
           homeWinProb: m.espn?.homeWinProb ? Math.round(m.espn.homeWinProb * 1000) / 1000 : null,
           awayWinProb: m.espn?.awayWinProb ? Math.round(m.espn.awayWinProb * 1000) / 1000 : null,
           // 不包含 lastUpdate，避免时间戳变化导致误判
         }))
       );
       
+      // 统计连接的客户端数量
+      const room = this.io.sockets.adapter.rooms.get('all-matches');
+      const clientCount = room ? room.size : 0;
+      
       // 只在数据变化时推送
       if (currentSnapshot !== this.lastMatchesSnapshot) {
         this.lastMatchesSnapshot = currentSnapshot;
         
-        // 统计连接的客户端数量
-        const room = this.io.sockets.adapter.rooms.get('all-matches');
-        const clientCount = room ? room.size : 0;
+        // 深度克隆数据以确保前端能检测到变化
+        // 使用 JSON 序列化/反序列化创建全新的对象引用
+        const clonedMatches = JSON.parse(JSON.stringify(matches));
         
         // 向订阅所有比赛的客户端广播
         this.io.to('all-matches').emit('matchesUpdate', {
           type: 'update',
-          data: matches,
+          data: clonedMatches,
           timestamp: Date.now(),
         });
         
         logger.info(`📡 数据变化，推送更新 (${matches.length} 场比赛) → ${clientCount} 个客户端`);
+      } else if (clientCount > 0) {
+        logger.debug(`⏭️ 数据无变化，跳过推送 (${clientCount} 个客户端等待中)`);
       }
 
       // 向订阅特定比赛的客户端广播
       matches.forEach(match => {
+        // 深度克隆单场比赛数据
+        const clonedMatch = JSON.parse(JSON.stringify(match));
+        
         this.io.to(`match:${match.id}`).emit('matchUpdate', {
           type: 'update',
-          data: match,
+          data: clonedMatch,
           timestamp: Date.now(),
         });
 

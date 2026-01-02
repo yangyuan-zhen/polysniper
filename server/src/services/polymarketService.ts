@@ -22,6 +22,10 @@ class PolymarketService {
   private subscriptionTimer: NodeJS.Timeout | null = null; // 批量订阅定时器
   private pingInterval: NodeJS.Timeout | null = null; // 心跳定时器
   private priceCache: Map<string, number> = new Map(); // 价格缓存
+  // 注意：2025年5月28日更新 - 100 token 订阅限制已被移除
+  private lastSubscribeTime = 0; // 上次订阅时间
+  private lastMessageTime = 0; // 上次收到消息的时间
+  private connectionCheckInterval: NodeJS.Timeout | null = null; // 连接检查定时器
 
   constructor() {
     this.gammaApiUrl = config.polymarket.gammaApiUrl;
@@ -68,8 +72,28 @@ class PolymarketService {
         // 启动心跳定时器（每15秒发送 WebSocket 协议层 Ping 帧）
         this.startHeartbeat();
         
+        // 启动连接健康检查（每30秒检查一次）
+        this.startConnectionCheck();
+        
         // 连接成功后，订阅市场频道
         this.subscribeToMarketChannel();
+        
+        // 🔄 重连后重新订阅之前的 assets
+        if (this.subscribedAssets.size > 0) {
+          logger.info(`🔄 重连后重新订阅 ${this.subscribedAssets.size} 个市场...`);
+          const assetsToResubscribe = Array.from(this.subscribedAssets);
+          this.subscribedAssets.clear(); // 清空，准备重新订阅
+          
+          // 将所有资产加入待订阅列表
+          assetsToResubscribe.forEach(assetId => {
+            this.pendingSubscriptions.add(assetId);
+          });
+          
+          // 延迟1秒后批量订阅（确保连接稳定）
+          setTimeout(() => {
+            this.flushSubscriptions();
+          }, 1000);
+        }
       });
 
       this.ws.on('message', (data: WebSocket.Data) => {
@@ -78,11 +102,24 @@ class PolymarketService {
           
           // 处理非 JSON 消息（如 "INVALID OPERATION"）
           if (!rawMessage.startsWith('{') && !rawMessage.startsWith('[')) {
-            logger.warn(`⚠️ 收到非 JSON 消息: ${rawMessage}`);
+            if (rawMessage === 'INVALID OPERATION') {
+              logger.error(`❌ WebSocket 操作被拒绝: ${rawMessage}`);
+              logger.error(`   当前订阅数: ${this.subscribedAssets.size}`);
+              logger.error(`   待订阅数: ${this.pendingSubscriptions.size}`);
+              logger.error(`   可能原因：Token ID 格式错误或订阅消息格式错误`);
+              logger.error(`   最近订阅的 tokens:`);
+              const recentAssets = Array.from(this.subscribedAssets).slice(-5);
+              recentAssets.forEach(id => logger.error(`     - ${id}`));
+            } else {
+              logger.warn(`⚠️ 收到非 JSON 消息: ${rawMessage}`);
+            }
             return;
           }
           
           const message = JSON.parse(rawMessage);
+          
+          // 更新最后收到消息的时间
+          this.lastMessageTime = Date.now();
           
           // 提高价格更新日志级别，确保能看到
           const event_type = message.event_type || message.type;
@@ -114,6 +151,7 @@ class PolymarketService {
       this.ws.on('close', (code, reason) => {
         logger.warn(`⚠️ WebSocket 连接已关闭 - Code: ${code}, Reason: ${reason || '无'}`);
         this.stopHeartbeat();
+        this.stopConnectionCheck();
         this.reconnect();
       });
     } catch (error) {
@@ -152,6 +190,45 @@ class PolymarketService {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
       logger.debug('心跳定时器已停止');
+    }
+  }
+
+  /**
+   * 启动连接健康检查
+   */
+  private startConnectionCheck(): void {
+    this.stopConnectionCheck();
+    this.lastMessageTime = Date.now();
+    
+    this.connectionCheckInterval = setInterval(() => {
+      const now = Date.now();
+      const timeSinceLastMessage = now - this.lastMessageTime;
+      
+      // 如果超过60秒没有收到消息，可能连接有问题
+      if (timeSinceLastMessage > 60000) {
+        logger.warn(`⚠️ 连接可能断开：已 ${Math.floor(timeSinceLastMessage / 1000)}s 未收到消息`);
+        logger.info(`🔄 尝试重连...`);
+        
+        // 主动关闭并重连
+        if (this.ws) {
+          this.ws.close();
+        }
+      } else {
+        logger.debug(`💚 连接健康：最后消息 ${Math.floor(timeSinceLastMessage / 1000)}s 前`);
+      }
+    }, 30000); // 每30秒检查一次
+    
+    logger.info('🩺 连接健康检查已启动（每30秒）');
+  }
+
+  /**
+   * 停止连接健康检查
+   */
+  private stopConnectionCheck(): void {
+    if (this.connectionCheckInterval) {
+      clearInterval(this.connectionCheckInterval);
+      this.connectionCheckInterval = null;
+      logger.debug('连接健康检查已停止');
     }
   }
 
@@ -259,6 +336,12 @@ class PolymarketService {
       return;
     }
 
+    // 验证 Token ID 格式（应该是以 0x 开头的十六进制字符串，或纯数字字符串）
+    if (!assetId || (typeof assetId !== 'string') || assetId.length === 0) {
+      logger.warn(`⚠️ 无效的 Token ID: ${assetId}`);
+      return;
+    }
+
     // 添加到待订阅列表
     this.pendingSubscriptions.add(assetId);
     
@@ -293,10 +376,32 @@ class PolymarketService {
         batches.push(assetsToSubscribe.slice(i, i + BATCH_SIZE));
       }
       
-      logger.info(`📡 批量订阅 ${assetsToSubscribe.length} 个市场 (分 ${batches.length} 批)`);
+      // 验证所有 Token ID
+      const validAssets = assetsToSubscribe.filter(id => {
+        if (!id || typeof id !== 'string' || id.length === 0) {
+          logger.warn(`⚠️ 跳过无效 Token ID: ${id}`);
+          return false;
+        }
+        return true;
+      });
+      
+      if (validAssets.length === 0) {
+        logger.warn(`⚠️ 没有有效的 Token ID 需要订阅`);
+        this.pendingSubscriptions.clear();
+        return;
+      }
+      
+      // 重新分批
+      const validBatches: string[][] = [];
+      for (let i = 0; i < validAssets.length; i += BATCH_SIZE) {
+        validBatches.push(validAssets.slice(i, i + BATCH_SIZE));
+      }
+      
+      logger.info(`📡 批量订阅 ${validAssets.length} 个市场 (分 ${validBatches.length} 批)`);
+      logger.info(`   当前已订阅: ${this.subscribedAssets.size}`);
       
       // 依次发送每一批
-      batches.forEach((batch, batchIndex) => {
+      validBatches.forEach((batch, batchIndex) => {
         const subscribeMessage = {
           type: 'market',
           assets_ids: batch,
@@ -305,7 +410,7 @@ class PolymarketService {
         
         const messageString = JSON.stringify(subscribeMessage);
         
-        logger.info(`   📦 批次 ${batchIndex + 1}/${batches.length}: ${batch.length} 个 tokens`);
+        logger.info(`   📦 批次 ${batchIndex + 1}/${validBatches.length}: ${batch.length} 个 tokens`);
         batch.slice(0, 3).forEach((assetId, index) => {
           logger.debug(`      Token ${index + 1}: ${assetId.slice(0, 16)}...`);
         });
@@ -315,15 +420,18 @@ class PolymarketService {
           if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(messageString);
             logger.debug(`   ✅ 批次 ${batchIndex + 1} 已发送`);
+            this.lastSubscribeTime = Date.now();
             
             // 只有成功发送后才标记为已订阅
             batch.forEach(assetId => {
               this.subscribedAssets.add(assetId);
             });
+            
+            logger.info(`   📊 当前已订阅: ${this.subscribedAssets.size} 个市场`);
           } else {
             logger.warn(`   ⚠️ 批次 ${batchIndex + 1} 发送失败：WebSocket 未连接`);
           }
-        }, batchIndex * 100); // 每批间隔 100ms
+        }, batchIndex * 200); // 每批间隔增加到 200ms，避免速率限制
       });
       
       // 清空待订阅列表

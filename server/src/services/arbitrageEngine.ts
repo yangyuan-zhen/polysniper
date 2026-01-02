@@ -63,7 +63,7 @@ class ArbitrageEngine {
 
   /**
    * EV+ 决策模型：只做一道简单的减法题
-   * 利润空间 = ESPN胜率 - Polymarket价格
+   * 利润空间 = ESPN胜率 - Polymarket bestAsk
    * 如果利润空间 > 10%，说明市场犯错了
    */
   private calculateEVPlusSignal(match: UnifiedMatch, side: 'home' | 'away'): ArbitrageSignal | null {
@@ -74,11 +74,19 @@ class ArbitrageEngine {
       ? (isHome ? match.espn.pregameHomeWinProb : match.espn.pregameAwayWinProb)
       : (isHome ? match.espn.homeWinProb : match.espn.awayWinProb);
     
-    // 获取Polymarket价格（市场盲人的出价）
-    const polyPrice = isHome ? match.poly.homePrice : match.poly.awayPrice;
+    // 获取Polymarket bestAsk（买入成本）
+    const polyBestAsk = isHome ? match.poly.homeBestAsk : match.poly.awayBestAsk;
+    const polyMidPrice = isHome ? match.poly.homePrice : match.poly.awayPrice;
+    
+    // 优先使用 bestAsk，如果没有则使用 midPrice
+    const buyPrice = polyBestAsk || polyMidPrice;
+    
+    if (!buyPrice) {
+      return null; // 没有有效价格
+    }
 
     // 计算利润空间（做一道减法题）
-    const profitMargin = espnProb - polyPrice;
+    const profitMargin = espnProb - buyPrice;
 
     // 铁律：利润空间 > 10% 才出手（市场犯错了）
     if (profitMargin < 0.10) {
@@ -109,11 +117,11 @@ class ArbitrageEngine {
       type: isHome ? SignalType.BUY_HOME : SignalType.BUY_AWAY,
       confidence,
       edge: profitMargin * 100, // 转换为百分比
-      reason: `🎯 ${teamName} ESPN${(espnProb * 100).toFixed(1)}% vs 市场${(polyPrice * 100).toFixed(1)}% 利润空间${(profitMargin * 100).toFixed(1)}% (Edge ${(profitMargin * 100).toFixed(1)}%)`,
+      reason: `🎯 ${teamName} ESPN${(espnProb * 100).toFixed(1)}% vs Ask${(buyPrice * 100).toFixed(1)}% 利润空间${(profitMargin * 100).toFixed(1)}% (Edge ${(profitMargin * 100).toFixed(1)}%)`,
       timestamp: Date.now(),
       details: {
         espnProb,
-        polyPrice,
+        polyPrice: buyPrice, // 使用 bestAsk 作为价格
         priceDiff: profitMargin,
         scoreDiff,
         timeRemaining: match.hupu.timeRemaining,

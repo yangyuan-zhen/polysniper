@@ -214,6 +214,8 @@ yhrsc30@gmail.com
 
 - 🏗️ [系统架构](./docs/ARCHITECTURE.md) - 完整的架构设计和数据流
 - 💰 [价格使用指南](./docs/PRICE_GUIDE.md) - Bid/Ask/Mid 价格详解
+- ⭐ [价格使用总结](./docs/PRICE_USAGE_SUMMARY.md) - 买入/卖出价格使用规范（重要）
+- 📡 [WebSocket 订阅指南](./docs/WEBSOCKET_LIMITS.md) - 连接健康检查和最佳实践
 - 🤖 [Paper Trading 说明](./docs/ARCHITECTURE.md#paper-trading模拟交易) - 模拟交易使用指南
 - 🎯 [套利策略](./docs/ARCHITECTURE.md#套利引擎arbitrageengine) - EV+ 决策模型说明
 

@@ -324,21 +324,31 @@ class DataAggregator {
       }
       
       // 📊 Paper Trading: 更新持仓价格（实时计算浮盈浮亏）
+      // 注意：使用 bestBid（卖出价）计算浮盈，如果没有则使用 midPrice
       if (match.poly) {
         paperTradingService.updatePositionPrice(
           matchId,
           match.poly.homeTokenId,
           match.poly.awayTokenId,
-          match.poly.homePrice,
-          match.poly.awayPrice
+          match.poly.homeBestBid || match.poly.homePrice, // 使用 bestBid（卖出价）
+          match.poly.awayBestBid || match.poly.awayPrice  // 使用 bestBid（卖出价）
         );
       }
     }
     
     // 🔒 Paper Trading: 比赛结束时自动平仓
+    // 注意：使用 bestBid（卖出价）平仓
     if (match.status === MatchStatus.FINAL && match.poly) {
-      paperTradingService.closePosition(matchId, match.poly.homeTokenId, match.poly.homePrice);
-      paperTradingService.closePosition(matchId, match.poly.awayTokenId, match.poly.awayPrice);
+      paperTradingService.closePosition(
+        matchId, 
+        match.poly.homeTokenId, 
+        match.poly.homeBestBid || match.poly.homePrice // 使用 bestBid（卖出价）
+      );
+      paperTradingService.closePosition(
+        matchId, 
+        match.poly.awayTokenId, 
+        match.poly.awayBestBid || match.poly.awayPrice // 使用 bestBid（卖出价）
+      );
     }
 
     // 更新时间戳
@@ -521,16 +531,18 @@ class DataAggregator {
         
         // 无条件更新价格（WebSocket 推送什么就用什么）
         match.poly.homePrice = newPrice;
+        match.poly.homeBestBid = data.bestBid || null;
+        match.poly.homeBestAsk = data.bestAsk || null;
         match.lastUpdate = Date.now();
         
         // 只在价格变化超过阈值时打印日志（避免日志刷屏）
         const priceChange = newPrice - oldPrice;
         const currentHomeTeam = match.homeTeam?.name || 'Unknown';
         if (Math.abs(priceChange) > 0.001) {
-          logger.info(`🔴 实时价格更新 [${currentHomeTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)} (${priceChange >= 0 ? '+' : ''}${(priceChange * 100).toFixed(2)}¢)`);
+          logger.info(`🔴 实时价格更新 [${currentHomeTeam}]: Mid=$${newPrice.toFixed(4)}, Bid=$${match.poly.homeBestBid?.toFixed(4) || 'N/A'}, Ask=$${match.poly.homeBestAsk?.toFixed(4) || 'N/A'}`);
           logger.info(`   📊 完整数据 - tokenId: ${homeTokenId.slice(0, 8)}..., 原始回调数据:`, JSON.stringify(data));
         } else {
-          logger.debug(`🔴 微小价格变化 [${currentHomeTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
+          logger.debug(`🔴 微小价格变化 [${currentHomeTeam}]: Mid=$${newPrice.toFixed(4)}`);
         }
         
         // 重新计算套利信号
@@ -548,6 +560,8 @@ class DataAggregator {
       if (match && match.poly) {
         const oldPrice = match.poly.awayPrice;
         const newPrice = data.price || data.midPrice;
+        const newBestBid = data.bestBid || null;
+        const newBestAsk = data.bestAsk || null;
         
         if (!newPrice) {
           logger.warn(`⚠️ 收到无效价格数据: ${JSON.stringify(data)}`);
@@ -557,17 +571,20 @@ class DataAggregator {
         // 记录最后一次 WebSocket 更新时间
         this.lastWSUpdate.set(matchId, Date.now());
         
-        // 无条件更新价格（WebSocket 推送什么就用什么）
+        // 更新所有价格（midPrice + bid/ask）
         match.poly.awayPrice = newPrice;
+        match.poly.awayBestBid = newBestBid;
+        match.poly.awayBestAsk = newBestAsk;
         match.lastUpdate = Date.now();
         
         // 只在价格变化超过阈值时打印日志（避免日志刷屏）
         const priceChange = newPrice - oldPrice;
         const currentAwayTeam = match.awayTeam?.name || 'Unknown';
         if (Math.abs(priceChange) > 0.001) {
-          logger.info(`🔵 实时价格更新 [${currentAwayTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)} (${priceChange >= 0 ? '+' : ''}${(priceChange * 100).toFixed(2)}¢)`);
+          logger.info(`🔵 实时价格更新 [${currentAwayTeam}]: Mid=$${newPrice.toFixed(4)}, Bid=$${newBestBid?.toFixed(4) || 'N/A'}, Ask=$${newBestAsk?.toFixed(4) || 'N/A'}`);
+          logger.debug(`   📊 完整数据:`, JSON.stringify(data));
         } else {
-          logger.debug(`🔵 微小价格变化 [${currentAwayTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
+          logger.debug(`🔵 微小价格变化 [${currentAwayTeam}]: Mid=$${newPrice.toFixed(4)}`);
         }
         
         // 重新计算套利信号

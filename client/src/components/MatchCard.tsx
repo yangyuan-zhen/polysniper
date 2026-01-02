@@ -1,12 +1,250 @@
 import type { UnifiedMatch } from '../types/backend';
 import { TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
+import { useState, useRef } from 'react';
+
+// ESPN 风格的胜率曲线图组件
+function WinProbChart({ homeTeam, awayTeam, espn }: { 
+  homeTeam: { name: string; score: number }; 
+  awayTeam: { name: string; score: number }; 
+  espn: { homeWinProb: number; awayWinProb: number; pregameHomeWinProb: number; pregameAwayWinProb: number } 
+}) {
+  const [hoverX, setHoverX] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  
+  // 创建简化的历史数据点（赛前 -> 当前）
+  const homePoints = [
+    espn.pregameHomeWinProb,
+    espn.homeWinProb
+  ];
+  
+  const awayPoints = [
+    espn.pregameAwayWinProb,
+    espn.awayWinProb
+  ];
+
+  const width = 280;
+  const height = 120;
+  const paddingLeft = 35;
+  const paddingRight = 10;
+  const paddingTop = 10;
+  const paddingBottom = 25;
+
+  // 生成 SVG 路径
+  const generatePath = (points: number[]) => {
+    const chartWidth = width - paddingLeft - paddingRight;
+    const chartHeight = height - paddingTop - paddingBottom;
+    const step = chartWidth / (points.length - 1);
+    return points
+      .map((point, index) => {
+        const x = paddingLeft + index * step;
+        const y = paddingTop + chartHeight - (point * chartHeight);
+        return index === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
+      })
+      .join(' ');
+  };
+
+  const homePath = generatePath(homePoints);
+  const awayPath = generatePath(awayPoints);
+  
+  // 鼠标移动处理
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    if (x >= paddingLeft && x <= width - paddingRight) {
+      setHoverX(x);
+    }
+  };
+  
+  // 计算悬停位置的胜率
+  const getHoverProb = (x: number) => {
+    const chartWidth = width - paddingLeft - paddingRight;
+    const ratio = (x - paddingLeft) / chartWidth;
+    const index = Math.min(Math.max(ratio, 0), 1);
+    
+    const homeProb = homePoints[0] + (homePoints[1] - homePoints[0]) * index;
+    const awayProb = awayPoints[0] + (awayPoints[1] - awayPoints[0]) * index;
+    
+    return { homeProb, awayProb };
+  };
+
+  return (
+    <div className="bg-black/20 rounded-lg p-3 border border-white/5">
+      {/* 标题栏 */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <div className="text-xs font-bold text-white">{homeTeam.name.split(' ').pop()}</div>
+          <div className="text-lg font-black text-blue-400">{(espn.homeWinProb * 100).toFixed(1)}%</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="text-lg font-black text-red-400">{(espn.awayWinProb * 100).toFixed(1)}%</div>
+          <div className="text-xs font-bold text-white">{awayTeam.name.split(' ').pop()}</div>
+        </div>
+      </div>
+
+      {/* SVG 曲线图 */}
+      <svg 
+        ref={svgRef}
+        width={width} 
+        height={height} 
+        className="w-full"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverX(null)}
+      >
+        <defs>
+          <linearGradient id="homeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="awayGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#ef4444" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        
+        {/* Y轴坐标 */}
+        <text x={5} y={paddingTop + 5} fontSize="10" fill="#6b7280" textAnchor="start">100</text>
+        <text x={5} y={paddingTop + (height - paddingTop - paddingBottom) / 2 + 5} fontSize="10" fill="#6b7280" textAnchor="start">50</text>
+        <text x={5} y={height - paddingBottom + 5} fontSize="10" fill="#6b7280" textAnchor="start">0</text>
+        
+        {/* X轴坐标 */}
+        <text x={paddingLeft} y={height - 5} fontSize="10" fill="#6b7280" textAnchor="start">赛前</text>
+        <text x={width - paddingRight} y={height - 5} fontSize="10" fill="#6b7280" textAnchor="end">当前</text>
+        
+        {/* 参考线 - 50% */}
+        <line 
+          x1={paddingLeft} 
+          y1={paddingTop + (height - paddingTop - paddingBottom) / 2} 
+          x2={width - paddingRight} 
+          y2={paddingTop + (height - paddingTop - paddingBottom) / 2}
+          stroke="#374151" 
+          strokeWidth="1" 
+          strokeDasharray="2,2" 
+        />
+        
+        {/* 主队区域 */}
+        <path
+          d={`${homePath} L ${width - paddingRight} ${height - paddingBottom} L ${paddingLeft} ${height - paddingBottom} Z`}
+          fill="url(#homeGradient)"
+        />
+        
+        {/* 客队区域 */}
+        <path
+          d={`${awayPath} L ${width - paddingRight} ${height - paddingBottom} L ${paddingLeft} ${height - paddingBottom} Z`}
+          fill="url(#awayGradient)"
+        />
+        
+        {/* 主队线 */}
+        <path
+          d={homePath}
+          stroke="#3b82f6"
+          strokeWidth="2"
+          fill="none"
+        />
+        
+        {/* 客队线 */}
+        <path
+          d={awayPath}
+          stroke="#ef4444"
+          strokeWidth="2"
+          fill="none"
+        />
+        
+        {/* 悬停时的垂直线 */}
+        {hoverX !== null && (
+          <>
+            <line
+              x1={hoverX}
+              y1={paddingTop}
+              x2={hoverX}
+              y2={height - paddingBottom}
+              stroke="#9ca3af"
+              strokeWidth="1"
+              strokeDasharray="4,4"
+            />
+            {(() => {
+              const { homeProb, awayProb } = getHoverProb(hoverX);
+              const chartHeight = height - paddingTop - paddingBottom;
+              return (
+                <>
+                  {/* 主队悬停点 */}
+                  <circle
+                    cx={hoverX}
+                    cy={paddingTop + chartHeight - (homeProb * chartHeight)}
+                    r="4"
+                    fill="#3b82f6"
+                    stroke="white"
+                    strokeWidth="2"
+                  />
+                  {/* 客队悬停点 */}
+                  <circle
+                    cx={hoverX}
+                    cy={paddingTop + chartHeight - (awayProb * chartHeight)}
+                    r="4"
+                    fill="#ef4444"
+                    stroke="white"
+                    strokeWidth="2"
+                  />
+                  {/* Tooltip */}
+                  <g>
+                    <rect
+                      x={hoverX < width / 2 ? hoverX + 10 : hoverX - 110}
+                      y={paddingTop + 10}
+                      width="100"
+                      height="45"
+                      fill="rgba(0, 0, 0, 0.9)"
+                      rx="4"
+                    />
+                    <text
+                      x={hoverX < width / 2 ? hoverX + 60 : hoverX - 60}
+                      y={paddingTop + 25}
+                      fontSize="11"
+                      fill="#3b82f6"
+                      textAnchor="middle"
+                      fontWeight="bold"
+                    >
+                      {homeTeam.name.split(' ').pop()}: {(homeProb * 100).toFixed(1)}%
+                    </text>
+                    <text
+                      x={hoverX < width / 2 ? hoverX + 60 : hoverX - 60}
+                      y={paddingTop + 42}
+                      fontSize="11"
+                      fill="#ef4444"
+                      textAnchor="middle"
+                      fontWeight="bold"
+                    >
+                      {awayTeam.name.split(' ').pop()}: {(awayProb * 100).toFixed(1)}%
+                    </text>
+                  </g>
+                </>
+              );
+            })()}
+          </>
+        )}
+        
+        {/* 当前点 */}
+        <circle
+          cx={width - paddingRight}
+          cy={paddingTop + (height - paddingTop - paddingBottom) - (espn.homeWinProb * (height - paddingTop - paddingBottom))}
+          r="3"
+          fill="#3b82f6"
+        />
+        <circle
+          cx={width - paddingRight}
+          cy={paddingTop + (height - paddingTop - paddingBottom) - (espn.awayWinProb * (height - paddingTop - paddingBottom))}
+          r="3"
+          fill="#ef4444"
+        />
+      </svg>
+    </div>
+  );
+}
 
 interface MatchCardProps {
   match: UnifiedMatch;
-  onClick?: (match: UnifiedMatch) => void;
 }
 
-export function MatchCard({ match, onClick }: MatchCardProps) {
+export function MatchCard({ match }: MatchCardProps) {
   const {
     homeTeam,
     awayTeam,
@@ -17,6 +255,13 @@ export function MatchCard({ match, onClick }: MatchCardProps) {
     signals,
     dataCompleteness,
   } = match;
+
+  // 调试：打印组件渲染
+  console.log(`[MatchCard] 🎨 渲染 ${homeTeam.name} vs ${awayTeam.name}`, {
+    homePrice: poly?.homePrice,
+    awayPrice: poly?.awayPrice,
+    lastUpdate: new Date(match.lastUpdate).toLocaleTimeString()
+  });
 
   // 获取比赛状态样式
   const getStatusStyle = () => {
@@ -39,9 +284,6 @@ export function MatchCard({ match, onClick }: MatchCardProps) {
 
   // 格式化价格
   const formatPrice = (price: number) => `$${price.toFixed(2)}`;
-
-  // 格式化概率
-  const formatProb = (prob: number) => `${(prob * 100).toFixed(1)}%`;
 
   // 判断是否有信号
   const hasSignals = signals.length > 0;
@@ -66,10 +308,9 @@ export function MatchCard({ match, onClick }: MatchCardProps) {
 
   return (
     <div 
-      className={`bg-surface rounded-xl border-2 hover:border-white/20 transition-all overflow-hidden cursor-pointer ${
+      className={`bg-surface rounded-xl border-2 transition-all overflow-hidden ${
         getCardBorderStyle()
       } ${hasSignals ? 'animate-pulse-slow' : ''}`}
-      onClick={() => onClick?.(match)}
     >
       {/* Header - Status, Time & Signals */}
       <div className="bg-white/5 px-4 py-2 flex items-center justify-between border-b border-white/5">
@@ -108,56 +349,14 @@ export function MatchCard({ match, onClick }: MatchCardProps) {
           </div>
         </div>
 
-        {/* ESPN 胜率 - 主要显示 */}
-        {dataCompleteness.hasESPNData && (
+        {/* ESPN 胜率曲线图 */}
+        {dataCompleteness.hasESPNData && espn.homeWinProb > 0 && espn.awayWinProb > 0 && (
           <div className="mb-3">
-            <div className="bg-gradient-to-r from-blue-500/10 to-cyan-500/10 rounded-lg p-3 border border-blue-500/20">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-blue-300">ESPN 数据</span>
-                {espn.injuries && espn.injuries.length > 0 && (
-                  <span className="text-xs text-orange-400 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    {espn.injuries.length} 人伤病
-                  </span>
-                )}
-              </div>
-              
-              {espn.homeWinProb > 0 && espn.awayWinProb > 0 ? (
-                <>
-                  {/* 胜率进度条 */}
-                  <div className="h-10 bg-gray-800/50 rounded-full overflow-hidden flex mb-2">
-                    <div 
-                      className="bg-gradient-to-r from-blue-500 to-blue-400 flex items-center justify-center text-sm font-bold text-white transition-all"
-                      style={{ width: `${espn.homeWinProb * 100}%` }}
-                    >
-                      {espn.homeWinProb > 0.15 && formatProb(espn.homeWinProb)}
-                    </div>
-                    <div 
-                      className="bg-gradient-to-r from-cyan-400 to-cyan-500 flex items-center justify-center text-sm font-bold text-white transition-all"
-                      style={{ width: `${espn.awayWinProb * 100}%` }}
-                    >
-                      {espn.awayWinProb > 0.15 && formatProb(espn.awayWinProb)}
-                    </div>
-                  </div>
-
-                  {/* 数值显示 */}
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="text-center">
-                      <div className="text-gray-400">{homeTeam.name.split(' ').pop()}</div>
-                      <div className="text-blue-400 font-bold">{formatProb(espn.homeWinProb)}</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-gray-400">{awayTeam.name.split(' ').pop()}</div>
-                      <div className="text-cyan-400 font-bold">{formatProb(espn.awayWinProb)}</div>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="text-xs text-gray-400 text-center py-2">
-                  {espn.injuries && espn.injuries.length > 0 ? '点击查看伤病详情' : '暂无胜率数据'}
-                </div>
-              )}
-            </div>
+            <WinProbChart 
+              homeTeam={homeTeam}
+              awayTeam={awayTeam}
+              espn={espn}
+            />
           </div>
         )}
 

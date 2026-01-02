@@ -50,6 +50,9 @@ class DataAggregator {
       try {
         await this.updateAllMatches();
         
+        // 检查长时间未更新的市场
+        this.checkStaleSubscriptions();
+        
         // 🎯 价格实时更新优化：
         // 为了保证 Polymarket 价格及时更新，所有比赛统一使用2秒更新频率
         // 这样价格变化延迟可以从 6-13秒 缩短到 6-10秒
@@ -81,7 +84,7 @@ class DataAggregator {
    */
   stop(): void {
     if (this.updateInterval) {
-      clearTimeout(this.updateInterval);
+      clearInterval(this.updateInterval);
       this.updateInterval = null;
     }
 
@@ -89,6 +92,31 @@ class DataAggregator {
       polymarketService.disconnect();
     }
     logger.info('数据聚合器已停止');
+  }
+
+  /**
+   * 检查并诊断长时间未收到 WebSocket 更新的市场
+   */
+  private checkStaleSubscriptions(): void {
+    const now = Date.now();
+    const STALE_THRESHOLD = 60000; // 60秒未更新视为过期
+    
+    let staleCount = 0;
+    this.matches.forEach((match, matchId) => {
+      if (match.poly && match.status === 'LIVE') {
+        const lastUpdate = this.lastWSUpdate.get(matchId);
+        if (lastUpdate && (now - lastUpdate) > STALE_THRESHOLD) {
+          staleCount++;
+          logger.warn(`⚠️ 市场价格长时间未更新 [${match.homeTeam.name} vs ${match.awayTeam.name}]`);
+          logger.warn(`   上次更新: ${Math.floor((now - lastUpdate) / 1000)}秒前`);
+          logger.warn(`   Market ID: ${match.poly.marketId.slice(0, 8)}...`);
+        }
+      }
+    });
+    
+    if (staleCount > 0) {
+      logger.warn(`📊 共有 ${staleCount} 个进行中的市场价格长时间未更新`);
+    }
   }
 
   /**
@@ -207,7 +235,7 @@ class DataAggregator {
       this.searchPolymarketByESPNTeams(homeTeamName, awayTeamName),
     ]);
 
-    // 处理 ESPN 数据（胜率、伤病）
+    // 处理 ESPN 数据（胜率）
     if (espnResult.status === 'fulfilled' && espnResult.value) {
       match.espn = espnResult.value;
       match.dataCompleteness.hasESPNData = true;
@@ -422,6 +450,7 @@ class DataAggregator {
     logger.info(`   Market ID: ${marketId.slice(0, 8)}...`);
     logger.info(`   主队 Token: ${homeTokenId.slice(0, 8)}...`);
     logger.info(`   客队 Token: ${awayTokenId.slice(0, 8)}...`);
+    logger.info(`   当前已订阅市场数: ${this.subscribedMarkets.size}`);
 
     // 订阅主队 token
     polymarketService.subscribe(homeTokenId, (data: any) => {
@@ -444,10 +473,12 @@ class DataAggregator {
         
         // 只在价格变化超过阈值时打印日志（避免日志刷屏）
         const priceChange = newPrice - oldPrice;
+        const currentHomeTeam = match.homeTeam?.name || 'Unknown';
         if (Math.abs(priceChange) > 0.001) {
-          logger.info(`🔴 实时价格更新 [${homeTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)} (${priceChange >= 0 ? '+' : ''}${(priceChange * 100).toFixed(2)}¢)`);
+          logger.info(`🔴 实时价格更新 [${currentHomeTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)} (${priceChange >= 0 ? '+' : ''}${(priceChange * 100).toFixed(2)}¢)`);
+          logger.info(`   📊 完整数据 - tokenId: ${homeTokenId.slice(0, 8)}..., 原始回调数据:`, JSON.stringify(data));
         } else {
-          logger.debug(`🔴 微小价格变化 [${homeTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
+          logger.debug(`🔴 微小价格变化 [${currentHomeTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
         }
         
         // 重新计算套利信号
@@ -480,10 +511,11 @@ class DataAggregator {
         
         // 只在价格变化超过阈值时打印日志（避免日志刷屏）
         const priceChange = newPrice - oldPrice;
+        const currentAwayTeam = match.awayTeam?.name || 'Unknown';
         if (Math.abs(priceChange) > 0.001) {
-          logger.info(`🔵 实时价格更新 [${awayTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)} (${priceChange >= 0 ? '+' : ''}${(priceChange * 100).toFixed(2)}¢)`);
+          logger.info(`🔵 实时价格更新 [${currentAwayTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)} (${priceChange >= 0 ? '+' : ''}${(priceChange * 100).toFixed(2)}¢)`);
         } else {
-          logger.debug(`🔵 微小价格变化 [${awayTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
+          logger.debug(`🔵 微小价格变化 [${currentAwayTeam}]: $${oldPrice.toFixed(4)} → $${newPrice.toFixed(4)}`);
         }
         
         // 重新计算套利信号

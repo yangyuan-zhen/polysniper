@@ -1,8 +1,8 @@
 import axios from 'axios';
-import { config } from '../config';
 import { logger } from '../utils/logger';
+import { config } from '../config';
 import { cache } from '../utils/cache';
-import { ESPNData, InjuryReport, CacheKey } from '../types';
+import { ESPNData, CacheKey } from '../types';
 
 class ESPNService {
   private baseUrl: string;
@@ -105,23 +105,14 @@ class ESPNService {
         }
       }
 
-      // 获取伤病数据
-      const injuries = this.parseInjuriesFromSummary(summary.injuries);
-      
-      if (injuries.length > 0) {
-        logger.debug(`[ESPN] 找到 ${injuries.length} 个伤病报告`);
-      }
-      
-      // 即使胜率为 0，也返回数据（可能有伤病信息）
       const result = {
         homeWinProb,
         awayWinProb,
         pregameHomeWinProb,
         pregameAwayWinProb,
-        injuries,
       };
       
-      logger.debug(`[ESPN] 返回数据 - 胜率: ${homeWinProb > 0 ? 'Y' : 'N'}, 伤病: ${injuries.length}`);
+      logger.debug(`[ESPN] 返回数据 - 胜率: ${homeWinProb > 0 ? 'Y' : 'N'}`);
       
       return result;
     } catch (error) {
@@ -143,35 +134,6 @@ class ESPNService {
     }
   }
   
-  /**
-   * 从 summary API 的 injuries 数据解析
-   */
-  private parseInjuriesFromSummary(injuriesData: any[]): any[] {
-    if (!injuriesData || injuriesData.length === 0) {
-      return [];
-    }
-    
-    const injuries: any[] = [];
-    
-    injuriesData.forEach((teamData: any) => {
-      const team = teamData.team;
-      const teamInjuries = teamData.injuries || [];
-      
-      teamInjuries.forEach((injury: any) => {
-        injuries.push({
-          ...injury,
-          team: {
-            id: team?.id,
-            displayName: team?.displayName,
-            abbreviation: team?.abbreviation,
-          },
-        });
-      });
-    });
-    
-    return injuries;
-  }
-
   /**
    * 根据球队名称匹配比赛并获取胜率
    * @param gameDate 比赛日期，格式 YYYYMMDD，用于查询未来比赛

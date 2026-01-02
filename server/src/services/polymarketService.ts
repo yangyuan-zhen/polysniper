@@ -315,13 +315,15 @@ class PolymarketService {
           if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(messageString);
             logger.debug(`   ✅ 批次 ${batchIndex + 1} 已发送`);
+            
+            // 只有成功发送后才标记为已订阅
+            batch.forEach(assetId => {
+              this.subscribedAssets.add(assetId);
+            });
+          } else {
+            logger.warn(`   ⚠️ 批次 ${batchIndex + 1} 发送失败：WebSocket 未连接`);
           }
         }, batchIndex * 100); // 每批间隔 100ms
-        
-        // 标记为已订阅
-        batch.forEach(assetId => {
-          this.subscribedAssets.add(assetId);
-        });
       });
       
       // 清空待订阅列表
@@ -680,7 +682,9 @@ class PolymarketService {
       awayTokenId = tokenIds[awayIndex] || '';
       
       // 使用 REST API 价格作为初始值，后续通过 WebSocket 实时更新
-      logger.debug(`解析成功: ${outcomes[homeIndex]}=$${homePrice.toFixed(4)}, ${outcomes[awayIndex]}=$${awayPrice.toFixed(4)}`);
+      logger.info(`📊 REST API 价格 [${homeTeam} vs ${awayTeam}]:`);
+      logger.info(`   原始 outcomePrices: ${JSON.stringify(outcomePrices)}`);
+      logger.info(`   解析后: ${outcomes[homeIndex]}=$${homePrice.toFixed(4)}, ${outcomes[awayIndex]}=$${awayPrice.toFixed(4)}`);
 
       return {
         marketId: market.conditionId || market.condition_id || market.id || '',

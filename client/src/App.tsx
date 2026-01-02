@@ -1,14 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Header } from './components/Header';
 import { MatchCard } from './components/MatchCard';
-import { MatchDetailModal } from './components/MatchDetailModal';
-import { StrategySignalCard } from './components/StrategySignalCard';
-import { SignalLog } from './components/SignalLog';
 import { ColorGuide } from './components/ColorGuide';
 import { websocketService } from './services/websocket';
 import { fetchMatches } from './services/api';
 import type { UnifiedMatch } from './types/backend';
-import { useSignals } from './contexts/SignalContext';
 import { Info, X } from 'lucide-react';
 
 type FilterType = 'all' | 'signals' | 'live';
@@ -19,8 +15,6 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [filter, setFilter] = useState<FilterType>('all');
   const [isGuideOpen, setIsGuideOpen] = useState(false);
-  const [selectedMatch, setSelectedMatch] = useState<UnifiedMatch | null>(null);
-  const { allSignals, topSignal } = useSignals();
 
   // 筛选和排序
   const filteredAndSortedMatches = useMemo(() => {
@@ -39,7 +33,7 @@ function App() {
       const timeB = b.startTime ? new Date(b.startTime).getTime() : 0;
       return timeA - timeB;
     });
-  }, [matches, allSignals, filter]);
+  }, [matches, filter]);
 
   // 按日期分组(使用中国时区 UTC+8)
   const groupedMatches = useMemo(() => {
@@ -153,6 +147,7 @@ function App() {
     const handleMatchesUpdate = (data: any) => {
       const now = new Date().toLocaleTimeString();
       console.log(`[App] 📊 收到比赛更新 (${data.type}):`, data.data.length, '场比赛', now);
+      console.log(`[App] 🔍 原始数据:`, data);
       
       // 打印所有比赛的价格信息用于调试
       if (data.data.length > 0) {
@@ -164,9 +159,14 @@ function App() {
         });
       }
       
-      // 直接使用后端发送的数据（已经是深度克隆的）
-      setMatches(data.data);
+      // 直接使用后端发送的数据（已经是深度克隆的新对象）
+      console.log(`[App] ⚡ 更新 React 状态，数据长度: ${data.data.length}`);
+      
+      // 使用函数式更新确保触发重渲染
+      setMatches(() => data.data);
       setLoading(false);
+      
+      console.log(`[App] ✅ setMatches 调用完成，触发重渲染`);
     };
 
     const handleSignalAlert = (data: any) => {
@@ -346,9 +346,8 @@ function App() {
                 <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                   {group.matches.map((match) => (
                     <MatchCard 
-                      key={match.id} 
-                      match={match} 
-                      onClick={(match) => setSelectedMatch(match)}
+                      key={`${match.id}-${match.lastUpdate}`}
+                      match={match}
                     />
                   ))}
                 </div>
@@ -364,16 +363,6 @@ function App() {
           )}
         </div>
 
-        {/* Bottom Section - Strategy Signal & Log */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-1">
-            <StrategySignalCard signal={topSignal} />
-          </div>
-          
-          <div className="lg:col-span-2">
-            <SignalLog />
-          </div>
-        </div>
       </div>
 
       {/* Right Drawer - Strategy Guide */}
@@ -405,12 +394,6 @@ function App() {
         />
       )}
 
-      {/* Match Detail Modal */}
-      <MatchDetailModal 
-        match={selectedMatch}
-        isOpen={selectedMatch !== null}
-        onClose={() => setSelectedMatch(null)}
-      />
     </div>
   );
 }

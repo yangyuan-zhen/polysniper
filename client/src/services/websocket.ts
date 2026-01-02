@@ -47,6 +47,8 @@ class WebSocketService {
    */
   private setupEventHandlers(): void {
     if (!this.socket) return;
+    
+    console.log('[WebSocket] 设置事件处理器...');
 
     this.socket.on('connect', () => {
       console.log('✅ [WebSocket] 已连接, ID:', this.socket?.id);
@@ -60,6 +62,8 @@ class WebSocketService {
     this.socket.on('connect_error', (error) => {
       this.reconnectAttempts++;
       console.error(`⚠️ [WebSocket] 连接错误 (尝试 ${this.reconnectAttempts}/${this.maxReconnectAttempts}):`, error.message);
+      console.error('[WebSocket] 错误详情:', error);
+      console.error('[WebSocket] 请确认后端服务器是否运行在 http://localhost:3000');
     });
 
     this.socket.on('reconnect', (attemptNumber) => {

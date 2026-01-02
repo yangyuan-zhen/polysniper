@@ -28,16 +28,6 @@ export interface ESPNData {
   awayWinProb: number;      // 客队实时胜率（进行中）
   pregameHomeWinProb: number; // 主队赛前胜率
   pregameAwayWinProb: number; // 客队赛前胜率
-  injuries?: InjuryReport[];  // 伤病报告
-}
-
-// 伤病报告
-export interface InjuryReport {
-  teamId: string;
-  playerId: string;
-  playerName: string;
-  status: 'OUT' | 'DOUBTFUL' | 'QUESTIONABLE' | 'PROBABLE' | 'DAY_TO_DAY';
-  description: string;
 }
 
 // Polymarket 市场数据

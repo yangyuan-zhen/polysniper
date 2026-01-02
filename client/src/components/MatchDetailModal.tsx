@@ -1,4 +1,4 @@
-import { X, TrendingUp, TrendingDown, Activity, AlertCircle } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, Activity } from 'lucide-react';
 import type { UnifiedMatch } from '../types/backend';
 
 interface MatchDetailModalProps {
@@ -114,73 +114,6 @@ export function MatchDetailModal({ match, isOpen, onClose }: MatchDetailModalPro
                       赛前: {formatProb(espn.pregameAwayWinProb)}
                     </div>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* 伤病名单 */}
-            {espn.injuries && espn.injuries.length > 0 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 text-orange-400" />
-                  伤病名单
-                </h3>
-
-                <div className="space-y-2">
-                  {espn.injuries.map((injury: any, index: number) => (
-                    <div 
-                      key={index}
-                      className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="font-bold text-white mb-1">{injury.athlete?.displayName || '未知球员'}</div>
-                          <div className="text-sm text-gray-400">
-                            {injury.athlete?.position?.abbreviation && (
-                              <span className="mr-2">位置: {injury.athlete.position.abbreviation}</span>
-                            )}
-                            {injury.team?.displayName && (
-                              <span>球队: {injury.team.displayName}</span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className={`px-2 py-1 rounded text-xs font-bold ${
-                            injury.status === 'Out' ? 'bg-red-500/20 text-red-400' :
-                            injury.status === 'Questionable' ? 'bg-yellow-500/20 text-yellow-400' :
-                            injury.status === 'Probable' ? 'bg-green-500/20 text-green-400' :
-                            'bg-gray-500/20 text-gray-400'
-                          }`}>
-                            {injury.status || '未知'}
-                          </div>
-                        </div>
-                      </div>
-                      {injury.details?.type && (
-                        <div className="text-sm text-orange-300 mt-2">
-                          伤病: {injury.details.type}
-                        </div>
-                      )}
-                      {injury.details?.detail && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          {injury.details.detail}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 无伤病信息 */}
-            {(!espn.injuries || espn.injuries.length === 0) && match.dataCompleteness.hasESPNData && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 text-green-400" />
-                  伤病名单
-                </h3>
-                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4 text-center">
-                  <div className="text-green-400 font-semibold">✓ 暂无伤病报告</div>
-                  <div className="text-sm text-gray-400 mt-1">两队主力球员状态良好</div>
                 </div>
               </div>
             )}

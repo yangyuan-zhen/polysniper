@@ -21,6 +21,7 @@ class PolymarketService {
   private pendingSubscriptions: Set<string> = new Set(); // 待订阅的 asset_id
   private subscriptionTimer: NodeJS.Timeout | null = null; // 批量订阅定时器
   private pingInterval: NodeJS.Timeout | null = null; // 心跳定时器
+  private priceCache: Map<string, number> = new Map(); // 价格缓存
 
   constructor() {
     this.gammaApiUrl = config.polymarket.gammaApiUrl;
@@ -210,34 +211,33 @@ class PolymarketService {
   private handleSingleMessage(message: any): void {
     const event_type = message.event_type || message.type;
     
-    // 订单簿快照（book）
     if (event_type === 'book' && message.asset_id) {
       const asset_id = message.asset_id;
-      const price = message.last_trade_price;
+      const bids = message.bids || [];
+      const asks = message.asks || [];
+      const bestBid = bids.length > 0 ? parseFloat(bids[0].price) : null;
+      const bestAsk = asks.length > 0 ? parseFloat(asks[0].price) : null;
+      const lastTradePrice = message.last_trade_price ? parseFloat(message.last_trade_price) : null;
+      const midPrice = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : lastTradePrice;
       
-      if (price) {
-        const priceValue = parseFloat(price);
-        logger.info(`📖 订单簿 [${asset_id.slice(0, 8)}...]: $${priceValue.toFixed(4)}`);
-        this.updatePrice(asset_id, priceValue);
+      if (midPrice) {
+        logger.info(`📖 订单簿 [${asset_id.slice(0, 8)}...]: Mid=$${midPrice.toFixed(4)}, Bid=$${bestBid?.toFixed(4) || 'N/A'}, Ask=$${bestAsk?.toFixed(4) || 'N/A'}`);
+        this.updatePrice(asset_id, { price: midPrice, bestBid, bestAsk });
       }
-    }
-    
-    // 价格变化事件（price_change）
-    else if (event_type === 'price_change' && message.price_changes) {
+    } else if (event_type === 'price_change' && message.price_changes) {
       message.price_changes.forEach((change: any) => {
         const asset_id = change.asset_id;
-        const price = change.price;
+        const price = change.price ? parseFloat(change.price) : null;
+        const bestBid = change.best_bid ? parseFloat(change.best_bid) : null;
+        const bestAsk = change.best_ask ? parseFloat(change.best_ask) : null;
+        const midPrice = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : price;
         
-        if (asset_id && price) {
-          const priceValue = parseFloat(price);
-          logger.info(`📈 价格更新 [${asset_id.slice(0, 8)}...]: $${priceValue.toFixed(4)} (${change.side})`);
-          this.updatePrice(asset_id, priceValue);
+        if (asset_id && midPrice) {
+          logger.info(`📈 价格更新 [${asset_id.slice(0, 8)}...]: Mid=$${midPrice.toFixed(4)}, Bid=$${bestBid?.toFixed(4) || 'N/A'}, Ask=$${bestAsk?.toFixed(4) || 'N/A'} (${change.side})`);
+          this.updatePrice(asset_id, { price: midPrice, bestBid, bestAsk });
         }
       });
-    }
-    
-    // 其他消息类型
-    else if (event_type) {
+    } else if (event_type) {
       logger.debug(`其他消息: ${event_type}`);
     }
   }
@@ -424,16 +424,24 @@ class PolymarketService {
   /**
    * 更新价格并触发订阅者回调（WebSocket 实时推送）
    */
-  private updatePrice(tokenId: string, price: number): void {
-    // 🔔 触发订阅者回调
-    const callbacks = this.subscribers.get(tokenId);
-    if (callbacks && callbacks.size > 0) {
-      logger.debug(`🔔 触发 ${callbacks.size} 个订阅者回调 [${tokenId.slice(0, 8)}...] price=$${price.toFixed(4)}`);
+  private updatePrice(assetId: string, priceData: { price: number; bestBid: number | null; bestAsk: number | null }): void {
+    // 更新价格缓存（使用中间价）
+    this.priceCache.set(assetId, priceData.price);
+
+    // 触发所有订阅者的回调
+    const callbacks = this.subscribers.get(assetId);
+    if (callbacks) {
       callbacks.forEach(callback => {
         try {
-          callback({ price, tokenId });
+          callback({ 
+            price: priceData.price, 
+            midPrice: priceData.price, 
+            bestBid: priceData.bestBid, 
+            bestAsk: priceData.bestAsk, 
+            timestamp: Date.now() 
+          });
         } catch (error) {
-          logger.error(`订阅者回调执行失败:`, error);
+          logger.error(`触发回调失败 [${assetId}]:`, error);
         }
       });
     }

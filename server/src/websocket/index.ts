@@ -193,6 +193,14 @@ export class WebSocketServer {
           });
         }
       });
+
+      // 📊 广播 Paper Trading 状态
+      const paperStatus = dataAggregator.getPaperTradingStatus();
+      this.io.to('all-matches').emit('paperTradingUpdate', {
+        type: 'update',
+        data: paperStatus,
+        timestamp: Date.now(),
+      });
     } catch (error) {
       logger.error('广播更新失败:', error);
     }

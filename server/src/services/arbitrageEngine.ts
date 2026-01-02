@@ -7,8 +7,12 @@ import {
 } from '../types';
 
 /**
- * 套利计算引擎
- * 核心职责：基于多源数据计算套利机会
+ * 套利计算引擎 - 新机制
+ * 核心理念：赚"情绪溢价" (Eating the Emotional Premium)
+ * 
+ * 盈利来源：我们赚的是散户对早期比分波动的过度反应
+ * 铁律：只做前三节（Q1-Q3），第四节赌博逻辑不参与
+ * 决策模型：EV+ 利润空间 = ESPN胜率 - Polymarket价格 > 10%
  */
 class ArbitrageEngine {
   /**
@@ -24,258 +28,99 @@ class ArbitrageEngine {
       return signals;
     }
 
+    // 铁律：只做前三节（Q1-Q3）
+    if (match.status === MatchStatus.LIVE) {
+      const quarter = match.hupu.quarter;
+      if (quarter === 'Q4' || quarter === 'OT') {
+        logger.info(`⛔ [套利引擎] 跳过第四节/加时 ${match.homeTeam.name} vs ${match.awayTeam.name} (${quarter})`);
+        return signals; // 第四节是赌博逻辑，不参与
+      }
+    }
+
     // 检查数据完整性
     if (!match.dataCompleteness.hasPolyData || !match.dataCompleteness.hasESPNData) {
       logger.debug(`Insufficient data for match ${match.id}`);
       return signals;
     }
 
-    // 策略1: 主队抄底策略（强队价格低于预期）
-    const buyHomeSignal = this.calculateBuyHomeSignal(match);
-    if (buyHomeSignal) {
-      signals.push(buyHomeSignal);
+    // 新策略：EV+ 决策模型
+    // 利润空间 = 上帝视角的胜率(ESPN) - 市场盲人的出价(Poly)
+    
+    // 主队机会
+    const homeSignal = this.calculateEVPlusSignal(match, 'home');
+    if (homeSignal) {
+      signals.push(homeSignal);
     }
 
-    // 策略2: 主队套现策略（价格过高）
-    const sellHomeSignal = this.calculateSellHomeSignal(match);
-    if (sellHomeSignal) {
-      signals.push(sellHomeSignal);
-    }
-
-    // 策略3: 客队抄底策略
-    const buyAwaySignal = this.calculateBuyAwaySignal(match);
-    if (buyAwaySignal) {
-      signals.push(buyAwaySignal);
-    }
-
-    // 策略4: 客队套现策略
-    const sellAwaySignal = this.calculateSellAwaySignal(match);
-    if (sellAwaySignal) {
-      signals.push(sellAwaySignal);
+    // 客队机会
+    const awaySignal = this.calculateEVPlusSignal(match, 'away');
+    if (awaySignal) {
+      signals.push(awaySignal);
     }
 
     return signals;
   }
 
   /**
-   * 策略1: 主队抄底策略
-   * 条件：ESPN胜率高但Polymarket价格低，存在套利空间
+   * EV+ 决策模型：只做一道简单的减法题
+   * 利润空间 = ESPN胜率 - Polymarket价格
+   * 如果利润空间 > 10%，说明市场犯错了
    */
-  private calculateBuyHomeSignal(match: UnifiedMatch): ArbitrageSignal | null {
+  private calculateEVPlusSignal(match: UnifiedMatch, side: 'home' | 'away'): ArbitrageSignal | null {
+    const isHome = side === 'home';
+    const teamName = isHome ? match.homeTeam.name : match.awayTeam.name;
+    // 获取ESPN胜率（上帝视角）
     const espnProb = match.status === MatchStatus.PRE 
-      ? match.espn.pregameHomeWinProb 
-      : match.espn.homeWinProb;
-    const polyPrice = match.poly.homePrice;
+      ? (isHome ? match.espn.pregameHomeWinProb : match.espn.pregameAwayWinProb)
+      : (isHome ? match.espn.homeWinProb : match.espn.awayWinProb);
+    
+    // 获取Polymarket价格（市场盲人的出价）
+    const polyPrice = isHome ? match.poly.homePrice : match.poly.awayPrice;
 
-    // 计算 Edge（预期收益）
-    const edge = espnProb - polyPrice;
+    // 计算利润空间（做一道减法题）
+    const profitMargin = espnProb - polyPrice;
 
-    // 阈值：Edge > 0.05 (5%) 才考虑
-    if (edge < 0.05) {
+    // 铁律：利润空间 > 10% 才出手（市场犯错了）
+    if (profitMargin < 0.10) {
       return null;
     }
 
-    // 计算置信度
-    let confidence = this.calculateConfidence(edge, match);
+    // 计算置信度（基于利润空间大小）
+    // 利润空间越大，市场犯的错越离谱，我们越有信心
+    let confidence = Math.min(0.5 + profitMargin * 3, 0.95); // 10%起步=0.8，20%=0.95
 
-    // 额外条件：比赛早期机会更大
+    // 时间因素：前三节，时间越多越好（时间是我们的盟友）
     if (match.status === MatchStatus.LIVE) {
-      const timeRemaining = this.parseTimeRemaining(match.hupu.timeRemaining, match.hupu.quarter);
-      if (timeRemaining < 600) { // 少于10分钟，降低置信度
-        confidence *= 0.8;
+      const quarter = match.hupu.quarter;
+      if (quarter === 'Q1') {
+        confidence = Math.min(confidence * 1.1, 0.95); // Q1奖励10%
+      } else if (quarter === 'Q2') {
+        confidence = Math.min(confidence * 1.05, 0.95); // Q2奖励5%
       }
+      // Q3保持原样
     }
 
-    // 置信度阈值：> 0.5 才发出信号
-    if (confidence < 0.5) {
-      return null;
-    }
+    // 生成信号
+    const scoreDiff = isHome 
+      ? match.homeTeam.score - match.awayTeam.score
+      : match.awayTeam.score - match.homeTeam.score;
 
     return {
-      type: SignalType.BUY_HOME,
+      type: isHome ? SignalType.BUY_HOME : SignalType.BUY_AWAY,
       confidence,
-      edge: edge * 100, // 转换为百分比
-      reason: `主队 ${match.homeTeam.name} ESPN胜率${(espnProb * 100).toFixed(1)}% vs 市场价格${(polyPrice * 100).toFixed(1)}% (Edge ${(edge * 100).toFixed(1)}%)`,
+      edge: profitMargin * 100, // 转换为百分比
+      reason: `🎯 ${teamName} ESPN${(espnProb * 100).toFixed(1)}% vs 市场${(polyPrice * 100).toFixed(1)}% 利润空间${(profitMargin * 100).toFixed(1)}% (Edge ${(profitMargin * 100).toFixed(1)}%)`,
       timestamp: Date.now(),
       details: {
         espnProb,
         polyPrice,
-        priceDiff: edge,
-        scoreDiff: match.homeTeam.score - match.awayTeam.score,
-        timeRemaining: match.hupu.timeRemaining,
-      },
-    };
-  }
-
-  /**
-   * 策略2: 主队套现策略
-   * 条件：Polymarket价格高于ESPN胜率，市场过度乐观
-   */
-  private calculateSellHomeSignal(match: UnifiedMatch): ArbitrageSignal | null {
-    const espnProb = match.status === MatchStatus.PRE 
-      ? match.espn.pregameHomeWinProb 
-      : match.espn.homeWinProb;
-    const polyPrice = match.poly.homePrice;
-
-    // 价格高于胜率，市场过度乐观
-    const edge = polyPrice - espnProb;
-
-    // 阈值：Edge > 0.07 (7%)，卖出要求更高的阈值
-    if (edge < 0.07) {
-      return null;
-    }
-
-    // 额外条件：主队领先且价格高
-    const scoreDiff = match.homeTeam.score - match.awayTeam.score;
-    if (scoreDiff < 5 || polyPrice < 0.7) {
-      return null;
-    }
-
-    const confidence = this.calculateConfidence(edge, match) * 0.9; // 卖出策略置信度略低
-
-    if (confidence < 0.6) {
-      return null;
-    }
-
-    return {
-      type: SignalType.SELL_HOME,
-      confidence,
-      edge: edge * 100,
-      reason: `主队 ${match.homeTeam.name} 市场价格${(polyPrice * 100).toFixed(1)}% vs ESPN胜率${(espnProb * 100).toFixed(1)}% 领先${scoreDiff}分 (套现机会)`,
-      timestamp: Date.now(),
-      details: {
-        espnProb,
-        polyPrice,
-        priceDiff: edge,
+        priceDiff: profitMargin,
         scoreDiff,
         timeRemaining: match.hupu.timeRemaining,
       },
     };
   }
 
-  /**
-   * 策略3: 客队抄底策略
-   */
-  private calculateBuyAwaySignal(match: UnifiedMatch): ArbitrageSignal | null {
-    const espnProb = match.status === MatchStatus.PRE 
-      ? match.espn.pregameAwayWinProb 
-      : match.espn.awayWinProb;
-    const polyPrice = match.poly.awayPrice;
-
-    const edge = espnProb - polyPrice;
-
-    if (edge < 0.05) {
-      return null;
-    }
-
-    let confidence = this.calculateConfidence(edge, match);
-
-    if (match.status === MatchStatus.LIVE) {
-      const timeRemaining = this.parseTimeRemaining(match.hupu.timeRemaining, match.hupu.quarter);
-      if (timeRemaining < 600) {
-        confidence *= 0.8;
-      }
-    }
-
-    if (confidence < 0.5) {
-      return null;
-    }
-
-    return {
-      type: SignalType.BUY_AWAY,
-      confidence,
-      edge: edge * 100,
-      reason: `客队 ${match.awayTeam.name} ESPN胜率${(espnProb * 100).toFixed(1)}% vs 市场价格${(polyPrice * 100).toFixed(1)}% (Edge ${(edge * 100).toFixed(1)}%)`,
-      timestamp: Date.now(),
-      details: {
-        espnProb,
-        polyPrice,
-        priceDiff: edge,
-        scoreDiff: match.awayTeam.score - match.homeTeam.score,
-        timeRemaining: match.hupu.timeRemaining,
-      },
-    };
-  }
-
-  /**
-   * 策略4: 客队套现策略
-   */
-  private calculateSellAwaySignal(match: UnifiedMatch): ArbitrageSignal | null {
-    const espnProb = match.status === MatchStatus.PRE 
-      ? match.espn.pregameAwayWinProb 
-      : match.espn.awayWinProb;
-    const polyPrice = match.poly.awayPrice;
-
-    const edge = polyPrice - espnProb;
-
-    if (edge < 0.07) {
-      return null;
-    }
-
-    const scoreDiff = match.awayTeam.score - match.homeTeam.score;
-    if (scoreDiff < 5 || polyPrice < 0.7) {
-      return null;
-    }
-
-    const confidence = this.calculateConfidence(edge, match) * 0.9;
-
-    if (confidence < 0.6) {
-      return null;
-    }
-
-    return {
-      type: SignalType.SELL_AWAY,
-      confidence,
-      edge: edge * 100,
-      reason: `客队 ${match.awayTeam.name} 市场价格${(polyPrice * 100).toFixed(1)}% vs ESPN胜率${(espnProb * 100).toFixed(1)}% 领先${scoreDiff}分 (套现机会)`,
-      timestamp: Date.now(),
-      details: {
-        espnProb,
-        polyPrice,
-        priceDiff: edge,
-        scoreDiff,
-        timeRemaining: match.hupu.timeRemaining,
-      },
-    };
-  }
-
-  /**
-   * 计算置信度
-   * 基于多个因素：Edge大小、流动性、时间等
-   */
-  private calculateConfidence(edge: number, match: UnifiedMatch): number {
-    let confidence = 0;
-
-    // 基础置信度：Edge越大，置信度越高
-    confidence += Math.min(edge * 10, 0.5); // 最多贡献0.5
-
-    // 流动性因素：流动性越高，置信度越高
-    const liquidity = match.poly.liquidity || 0;
-    if (liquidity > 10000) {
-      confidence += 0.2;
-    } else if (liquidity > 5000) {
-      confidence += 0.1;
-    }
-
-    // 比分差距因素：比分接近时，反转可能性更大
-    const scoreDiff = Math.abs(match.homeTeam.score - match.awayTeam.score);
-    if (scoreDiff < 5) {
-      confidence += 0.1;
-    } else if (scoreDiff > 15) {
-      confidence -= 0.1; // 分差过大，反转难度高
-    }
-
-    // 时间因素：比赛早期，变数更大
-    if (match.status === MatchStatus.LIVE) {
-      const timeRemaining = this.parseTimeRemaining(match.hupu.timeRemaining, match.hupu.quarter);
-      if (timeRemaining > 1800) { // 超过30分钟
-        confidence += 0.2;
-      }
-    }
-
-    // 限制在 0-1 范围内
-    return Math.max(0, Math.min(1, confidence));
-  }
 
   /**
    * 解析剩余时间（秒）

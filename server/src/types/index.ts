@@ -35,8 +35,12 @@ export interface PolymarketData {
   marketId: string;
   homeTokenId: string;
   awayTokenId: string;
-  homePrice: number;        // 主队价格 (0-1)
-  awayPrice: number;        // 客队价格 (0-1)
+  homePrice: number;        // 主队中间价 (0-1) - 用于显示
+  awayPrice: number;        // 客队中间价 (0-1) - 用于显示
+  homeBestBid?: number;     // 主队最高买价 - 卖出时收到的价格
+  homeBestAsk?: number;     // 主队最低卖价 - 买入时支付的价格
+  awayBestBid?: number;     // 客队最高买价
+  awayBestAsk?: number;     // 客队最低卖价
   homeVolume?: number;      // 主队交易量
   awayVolume?: number;      // 客队交易量
   liquidity?: number;       // 流动性
@@ -125,10 +129,67 @@ export interface WSMessage {
 
 // 缓存键类型
 export enum CacheKey {
-  MARKETS = 'markets',
-  MATCH = 'match',
-  ESPN_SCORES = 'espn:scores',
-  ESPN_INJURIES = 'espn:injuries',
-  HUPU_SCHEDULE = 'hupu:schedule',
-  POLY_PRICES = 'poly:prices',
+  ESPN_SCORES = 'espn_scores',
+  MARKETS = 'polymarket_markets',
+  MATCH = 'polymarket_match',
+}
+
+// ============ Paper Trading 模拟交易 ============
+
+// 订单类型
+export enum OrderType {
+  BUY = 'BUY',
+  SELL = 'SELL',
+}
+
+// 订单状态
+export enum OrderStatus {
+  PENDING = 'PENDING',   // 等待成交
+  FILLED = 'FILLED',     // 已成交
+  CLOSED = 'CLOSED',     // 已平仓
+}
+
+// 订单记录
+export interface Order {
+  id: string;                    // 订单ID
+  matchId: string;               // 比赛ID
+  type: OrderType;               // 买入/卖出
+  status: OrderStatus;           // 订单状态
+  team: string;                  // 队名
+  tokenId: string;               // Token ID
+  quantity: number;              // 数量（份额）
+  entryPrice: number;            // 开仓价格
+  exitPrice?: number;            // 平仓价格
+  currentPrice: number;          // 当前价格
+  pnl: number;                   // 盈亏（美元）
+  pnlPercent: number;            // 盈亏百分比
+  reason: string;                // 交易原因（信号描述）
+  confidence: number;            // 信号置信度
+  timestamp: number;             // 开仓时间
+  closeTimestamp?: number;       // 平仓时间
+}
+
+// 持仓记录
+export interface Position {
+  matchId: string;
+  team: string;
+  tokenId: string;
+  quantity: number;              // 持有数量
+  avgCost: number;               // 平均成本
+  currentPrice: number;          // 当前价格
+  unrealizedPnl: number;         // 未实现盈亏
+  unrealizedPnlPercent: number;  // 未实现盈亏百分比
+}
+
+// 账户状态
+export interface AccountStatus {
+  balance: number;               // 可用余额
+  equity: number;                // 总权益（余额+持仓市值）
+  positions: Position[];         // 当前持仓
+  openOrders: Order[];           // 未平仓订单
+  closedOrders: Order[];         // 已平仓订单
+  totalTrades: number;           // 总交易次数
+  winRate: number;               // 胜率
+  totalPnl: number;              // 总盈亏
+  totalPnlPercent: number;       // 总盈亏百分比
 }

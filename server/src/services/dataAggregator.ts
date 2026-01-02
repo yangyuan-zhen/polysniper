@@ -2,6 +2,7 @@ import { logger } from '../utils/logger';
 import { espnService } from './espnService';
 import { polymarketService } from './polymarketService';
 import { arbitrageEngine } from './arbitrageEngine';
+import { paperTradingService } from './paperTradingService';
 import { UnifiedMatch, MatchStatus } from '../types';
 import { config } from '../config';
 import { NBA_TEAMS } from '../config/teamMappings';
@@ -53,26 +54,25 @@ class DataAggregator {
         // 检查长时间未更新的市场
         this.checkStaleSubscriptions();
         
-        // 🎯 价格实时更新优化：
-        // 为了保证 Polymarket 价格及时更新，所有比赛统一使用2秒更新频率
-        // 这样价格变化延迟可以从 6-13秒 缩短到 6-10秒
-        const interval = 2000; // 固定2秒
-        
-        // 旧逻辑（可选）：
-        // const interval = this.hasLiveMatches ? 2000 : 5000;
+        // 🎯 数据更新策略：
+        // 1. 实时数据（比分、时间、胜率、价格）：不缓存
+        // 2. 静态数据（比赛列表、Token ID、Market ID）：长效缓存
+        // 3. ESPN：每3秒请求一次（节流）
+        // 4. Polymarket WS：被动接收，实时处理
+        const interval = 3000; // 3秒节流
         
         this.updateInterval = setTimeout(update, interval);
         
         // 显示当前状态
         if (this.hasLiveMatches) {
-          logger.debug(`🔴 进行中比赛，更新频率: 2秒`);
+          logger.debug(`🔴 进行中比赛，ESPN节流: 3秒`);
         } else {
-          logger.debug(`💰 关注价格变化，更新频率: 2秒`);
+          logger.debug(`⚪ 等待比赛开始，ESPN节流: 3秒`);
         }
       } catch (err) {
         logger.error('更新比赛数据失败:', err);
-        // 出错后2秒重试（保持一致）
-        this.updateInterval = setTimeout(update, 2000);
+        // 出错后3秒重试（保持一致）
+        this.updateInterval = setTimeout(update, 3000);
       }
     };
     
@@ -305,8 +305,40 @@ class DataAggregator {
         logger.info(`发现 ${match.signals.length} 个套利信号 [${matchId}]`);
         match.signals.forEach((signal: any) => {
           logger.info(`  - ${signal.type}: ${signal.reason} (置信度: ${(signal.confidence * 100).toFixed(1)}%)`);
+          
+          // 🤖 Paper Trading: 自动执行模拟交易
+          // 注意：买入时使用 bestAsk（最低卖价），卖出时使用 bestBid（最高买价）
+          paperTradingService.executeSignal(
+            signal,
+            matchId,
+            match.homeTeam.name,
+            match.awayTeam.name,
+            match.poly.homeTokenId,
+            match.poly.awayTokenId,
+            match.poly.homeBestAsk,  // 买入价
+            match.poly.awayBestAsk,  // 买入价
+            match.poly.homePrice,    // 中间价（备用）
+            match.poly.awayPrice     // 中间价（备用）
+          );
         });
       }
+      
+      // 📊 Paper Trading: 更新持仓价格（实时计算浮盈浮亏）
+      if (match.poly) {
+        paperTradingService.updatePositionPrice(
+          matchId,
+          match.poly.homeTokenId,
+          match.poly.awayTokenId,
+          match.poly.homePrice,
+          match.poly.awayPrice
+        );
+      }
+    }
+    
+    // 🔒 Paper Trading: 比赛结束时自动平仓
+    if (match.status === MatchStatus.FINAL && match.poly) {
+      paperTradingService.closePosition(matchId, match.poly.homeTokenId, match.poly.homePrice);
+      paperTradingService.closePosition(matchId, match.poly.awayTokenId, match.poly.awayPrice);
     }
 
     // 更新时间戳
@@ -388,14 +420,27 @@ class DataAggregator {
     if (statusType === 'pre') {
       match.status = MatchStatus.PRE;
       match.statusStr = '未开始';
+      match.hupu.quarter = '';
     } else if (statusType === 'in') {
       match.status = MatchStatus.LIVE;
-      const period = espnGame.status?.period || '';
+      const period = espnGame.status?.period || 0;
       const clock = espnGame.status?.displayClock || '';
-      match.statusStr = `Q${period} ${clock}`;
+      
+      // 设置 quarter 字段（用于套利引擎判断）
+      if (period === 5) {
+        match.hupu.quarter = 'OT';
+      } else if (period >= 1 && period <= 4) {
+        match.hupu.quarter = `Q${period}`;
+      } else {
+        match.hupu.quarter = '';
+      }
+      
+      match.statusStr = `${match.hupu.quarter} ${clock}`;
+      match.hupu.timeRemaining = clock;
     } else if (statusType === 'post') {
       match.status = MatchStatus.FINAL;
       match.statusStr = '已结束';
+      match.hupu.quarter = 'FINAL';
     }
 
     match.dataCompleteness.hasHupuData = true;
@@ -423,6 +468,13 @@ class DataAggregator {
    */
   getAllMatches(): UnifiedMatch[] {
     return Array.from(this.matches.values());
+  }
+
+  /**
+   * 获取 Paper Trading 账户状态
+   */
+  getPaperTradingStatus() {
+    return paperTradingService.getAccountStatus();
   }
 
   /**

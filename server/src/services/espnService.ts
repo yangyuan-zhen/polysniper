@@ -17,29 +17,21 @@ class ESPNService {
    */
   async getScoreboard(dates?: string): Promise<any> {
     try {
-      // 构造缓存键（包含日期）
-      const cacheKey = dates ? `${CacheKey.ESPN_SCORES}:${dates}` : CacheKey.ESPN_SCORES;
-      
-      // 先检查缓存
-      const cached = await cache.get(cacheKey);
-      if (cached) {
-        return cached;
-      }
+      // 注意：不缓存实时数据（比分、时间、胜率）
+      // 这些数据需要实时获取，由调用方控制请求频率（节流）
 
       const params: any = {};
       if (dates) {
         params.dates = dates;
       }
 
+      // 发起请求
       const response = await axios.get(`${this.baseUrl}/scoreboard`, {
         params,
         timeout: 10000,
       });
 
       const data = response.data;
-      
-      // 缓存10秒
-      await cache.set(cacheKey, data, 10);
       
       logger.debug(`已获取 ESPN 球队数据${dates ? ` (日期: ${dates})` : ''}`);
       return data;

@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61dafb)](https://reactjs.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
 
-> 📖 **详细文档**: [PROJECT_SUMMARY.md](./PROJECT_SUMMARY.md) | [ARCHITECTURE.md](./ARCHITECTURE.md)
+> 📖 **详细文档**: [系统架构](./docs/ARCHITECTURE.md) | [价格指南](./docs/PRICE_GUIDE.md)
 
 ## 📁 项目结构
 
@@ -91,24 +91,34 @@ npm start
 
 - ⚡ **毫秒级实时更新** - WebSocket 推送，价格延迟 < 1秒
 - 🔄 **多源数据整合** - ESPN 赔率 + Polymarket 预测市场
-- 💰 **自动套利检测** - 实时计算价格差异和潜在收益
-- 🏥 **伤病信息追踪** - 实时显示球员伤病状态
-- 📊 **数据可视化** - 实时图表展示价格走势
+- 💰 **自动套利检测** - EV+ 模型，利润空间 > 10% 触发
+- 🤖 **Paper Trading** - 内存模拟交易，自动买卖，实时盈亏
+- 💸 **真实价格模拟** - 买入用 Ask，卖出用 Bid，包含滑点
+- 📊 **数据可视化** - ESPN 风格胜率曲线，交互式悬停
 - 🎯 **智能匹配** - 三层漏斗精准匹配球队和市场
+- ⏰ **时间控制** - 只做 Q1-Q3，避免第四节赌博逻辑
 
-## 📊 数据更新机制
+## 📊 数据更新策略
 
-### Polymarket 价格
-- **WebSocket 实时推送** ⚡ **（已优化）**
-- 延迟 < 1秒（实时推送价格更新）
-- 混合模式：WebSocket 推送 + REST API 市场结构（10秒缓存）
-- 使用协议层 Ping/Pong 心跳（每15秒）
+### 实时数据（不缓存）
+- ✅ **比分、时间、ESPN 胜率、Polymarket 价格**
+- ESPN: 每 **3秒** 请求一次（节流）
+- Polymarket: **WebSocket 实时推送**（被动接收）
+- 前端: 每 **500ms** 推送一次
 
-### ESPN 比赛信息
-- **动态轮询频率**:
-  - 🔴 进行中: 2秒/次（实时监控）
-  - 🟡 未开始: 5秒/次（等待开赛）
-  - 🟢 已结束: 30秒/次（等待结算）
+### 静态数据（长效缓存 24小时）
+- ✅ **今日比赛列表、Token ID、Market ID、Team Mapping**
+- 这些数据在比赛期间不会改变
+- 减少 API 请求，提升性能
+
+### 价格体系
+| 价格类型 | 用途 | 来源 |
+|---------|------|------|
+| **Ask（卖价）** | 买入时支付 | `asks[0].price` |
+| **Bid（买价）** | 卖出时收到 | `bids[0].price` |
+| **Mid（中间价）** | 显示、估值 | `(Bid + Ask) / 2` |
+
+> 💡 详见 [价格使用指南](./docs/PRICE_GUIDE.md)
 
 ## 🔐 环境配置
 
@@ -202,7 +212,31 @@ yhrsc30@gmail.com
 
 ## 📚 文档索引
 
-- 📋 [项目总结](./PROJECT_SUMMARY.md) - 完整的技术文档
-- 🏗️ [架构设计](./ARCHITECTURE.md) - 系统架构和设计决策
-- 📊 [数据流程](./DATA_UPDATE_FLOW.md) - 数据更新流程详解
-- 📝 [变更日志](./CHANGELOG.md) - 版本更新记录
+- 🏗️ [系统架构](./docs/ARCHITECTURE.md) - 完整的架构设计和数据流
+- 💰 [价格使用指南](./docs/PRICE_GUIDE.md) - Bid/Ask/Mid 价格详解
+- 🤖 [Paper Trading 说明](./docs/ARCHITECTURE.md#paper-trading模拟交易) - 模拟交易使用指南
+- 🎯 [套利策略](./docs/ARCHITECTURE.md#套利引擎arbitrageengine) - EV+ 决策模型说明
+
+## 💼 Paper Trading 快速入门
+
+```typescript
+// 自动运行，无需配置
+初始资金: $1000 USDC
+仓位管理: 每次 10% 资金
+交易逻辑: 
+  - 发现信号 → 自动买入（Ask 价格）
+  - 实时盈亏 → 市值估值（Mid 价格）
+  - 比赛结束 → 自动平仓（Bid 价格）
+
+// 查看交易记录
+监听 WebSocket 事件: paperTradingUpdate
+```
+
+**示例日志：**
+```
+✅ [Paper Trading] 买入 LA Clippers x11.63 @$0.8600 (Ask价，成本: $10.00)
+   订单ID: ORD000001, 置信度: 95.0%, 余额: $990.00
+
+🔒 [Paper Trading] 平仓 LA Clippers @$0.9500
+   盈亏: $10.47 (+121.88%), 余额: $1010.47
+```

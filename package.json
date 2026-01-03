@@ -4,15 +4,17 @@
   "private": true,
   "description": "PolySniper - NBA prediction market monitoring system",
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\" \"npm run dev:shared\"",
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
-    "build": "npm run build:server && npm run build:client",
+    "dev:shared": "cd shared && npm run dev",
+    "build": "npm run build:shared && npm run build:server && npm run build:client",
     "build:server": "cd server && npm run build",
     "build:client": "cd client && npm run build",
+    "build:shared": "cd shared && npm run build",
     "start": "cd server && npm start",
-    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
-    "clean": "rimraf server/dist client/dist server/node_modules client/node_modules node_modules"
+    "install:all": "npm install && cd shared && npm install && cd ../server && npm install && cd ../client && npm install",
+    "clean": "rimraf server/dist client/dist shared/dist server/node_modules client/node_modules shared/node_modules node_modules"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
@@ -20,6 +22,7 @@
   },
   "workspaces": [
     "client",
-    "server"
+    "server",
+    "shared"
   ]
 }

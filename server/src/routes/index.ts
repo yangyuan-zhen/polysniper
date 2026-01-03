@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dataAggregator } from '../services/dataAggregator';
-import { MatchStatus } from '../types';
+import { MatchStatus } from '../../../shared/types/index';
 
 const router = Router();
 

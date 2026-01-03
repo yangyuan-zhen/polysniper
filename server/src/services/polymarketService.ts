@@ -4,7 +4,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { cache } from '../utils/cache';
-import { PolymarketData, CacheKey } from '../types';
+import { PolymarketData, CacheKey } from '../../../shared/types/index';
 import { findTeamByChinese, NBATeam } from '../config/nbaTeamMap';
 
 class PolymarketService {
@@ -46,17 +46,29 @@ class PolymarketService {
       logger.info(`   URL: ${this.wsUrl}`);
       logger.info(`   模式: 公开 market channel，匿名订阅（无需认证）`);
       
-      // 配置代理（如果需要）
-      const options: any = {};
+      // 配置 WebSocket 选项
+      const options: any = {
+        // 增加超时设置
+        handshakeTimeout: 15000, // 15秒连接超时，增加以允许代理连接
+        // 禁用压缩，提高稳定性
+        perMessageDeflate: false,
+        // 关闭验证，避免证书问题
+        rejectUnauthorized: false
+      };
       
+      // 获取代理配置
       const proxy = config.polymarket.wsProxy;
       
       if (proxy && proxy !== 'none') {
-        logger.info(`   使用代理: ${proxy}`);
+        logger.info(`   使用 Clash 代理: ${proxy}`);
         try {
-          options.agent = new HttpsProxyAgent(proxy);
+          // 创建代理代理
+          const agent = new HttpsProxyAgent(proxy);
+          options.agent = agent;
+          logger.info('   代理配置成功');
         } catch (error) {
           logger.warn(`   代理配置失败: ${error}`);
+          logger.warn('   将尝试直接连接');
         }
       } else {
         logger.info(`   直接连接（无代理）`);
@@ -75,8 +87,9 @@ class PolymarketService {
         // 启动连接健康检查（每30秒检查一次）
         this.startConnectionCheck();
         
-        // 连接成功后，订阅市场频道
-        this.subscribeToMarketChannel();
+        // ⚠️ 不发送初始连接消息
+        // Polymarket WebSocket 不期望 "hello" 消息，会返回 INVALID OPERATION
+        // 直接进行订阅即可
         
         // 🔄 重连后重新订阅之前的 assets
         if (this.subscribedAssets.size > 0) {
@@ -89,10 +102,10 @@ class PolymarketService {
             this.pendingSubscriptions.add(assetId);
           });
           
-          // 延迟1秒后批量订阅（确保连接稳定）
+          // 延迟2秒后批量订阅（确保连接稳定）
           setTimeout(() => {
             this.flushSubscriptions();
-          }, 1000);
+          }, 2000);
         }
       });
 
@@ -103,15 +116,29 @@ class PolymarketService {
           // 处理非 JSON 消息（如 "INVALID OPERATION"）
           if (!rawMessage.startsWith('{') && !rawMessage.startsWith('[')) {
             if (rawMessage === 'INVALID OPERATION') {
-              logger.error(`❌ WebSocket 操作被拒绝: ${rawMessage}`);
+              logger.error('❌ WebSocket 操作被拒绝: INVALID OPERATION');
               logger.error(`   当前订阅数: ${this.subscribedAssets.size}`);
               logger.error(`   待订阅数: ${this.pendingSubscriptions.size}`);
               logger.error(`   可能原因：Token ID 格式错误或订阅消息格式错误`);
+              logger.error(`   上次订阅时间: ${new Date(this.lastSubscribeTime).toISOString()}`);
+              
+              // 不重置订阅状态，而是记录错误并继续
+              // 这样可以避免丢失已订阅的市场
+              logger.error(`   ⚠️ 保留已订阅的市场，不重置状态`);
+              
+              // 输出最近订阅的 5 个 token
               logger.error(`   最近订阅的 tokens:`);
-              const recentAssets = Array.from(this.subscribedAssets).slice(-5);
-              recentAssets.forEach(id => logger.error(`     - ${id}`));
+              Array.from(this.subscribedAssets).slice(-5).forEach(token => {
+                try {
+                  const bigIntValue = BigInt(token);
+                  const hexValue = '0x' + bigIntValue.toString(16);
+                  logger.error(`      - ${token} (十六进制: ${hexValue.slice(0, 20)}...)`);
+                } catch (error) {
+                  logger.error(`      - ${token}`);
+                }
+              });
             } else {
-              logger.warn(`⚠️ 收到非 JSON 消息: ${rawMessage}`);
+              logger.warn(`收到非 JSON WebSocket 消息: ${rawMessage}`);
             }
             return;
           }
@@ -255,12 +282,32 @@ class PolymarketService {
   }
 
   /**
-   * 订阅市场频道（初始化时不订阅，等待具体 token）
+   * 初始化时不订阅全局频道，等待具体 token
+   * Polymarket CLOB WebSocket 不支持全局订阅
+   * 需要订阅具体的 asset_id (token ID)
    */
-  private subscribeToMarketChannel(): void {
-    // Polymarket CLOB WebSocket 不支持全局订阅
-    // 需要订阅具体的 asset_id (token ID)
+  private initializeConnection(): void {
     logger.info('✅ Polymarket WebSocket 已就绪，等待订阅具体 token');
+  }
+  
+  /**
+   * 重置订阅状态
+   * 在出现订阅错误时调用，清空已订阅和待订阅列表
+   */
+  private resetSubscriptions(): void {
+    logger.info('重置订阅状态');
+    
+    // 清空已订阅列表
+    this.subscribedAssets.clear();
+    
+    // 清空待订阅列表
+    this.pendingSubscriptions.clear();
+    
+    // 延迟 2 秒后再尝试订阅，给服务器时间处理
+    setTimeout(() => {
+      logger.info('准备重新订阅');
+      // 在下一次数据更新时自动重新订阅
+    }, 2000);
   }
 
   /**
@@ -286,8 +333,22 @@ class PolymarketService {
    * 处理单个消息
    */
   private handleSingleMessage(message: any): void {
+    // 检查消息类型
     const event_type = message.event_type || message.type;
     
+    // 处理订阅响应
+    if (event_type === 'subscribed' || event_type === 'subscription_succeeded') {
+      logger.info(`✅ 订阅成功: ${message.request_id || 'unknown'}`);
+      return;
+    }
+    
+    // 处理错误消息
+    if (event_type === 'error' || message.error) {
+      logger.error(`❌ WebSocket 错误: ${message.error || JSON.stringify(message)}`);
+      return;
+    }
+    
+    // 处理订单簿数据
     if (event_type === 'book' && message.asset_id) {
       const asset_id = message.asset_id;
       const bids = message.bids || [];
@@ -301,7 +362,9 @@ class PolymarketService {
         logger.info(`📖 订单簿 [${asset_id.slice(0, 8)}...]: Mid=$${midPrice.toFixed(4)}, Bid=$${bestBid?.toFixed(4) || 'N/A'}, Ask=$${bestAsk?.toFixed(4) || 'N/A'}`);
         this.updatePrice(asset_id, { price: midPrice, bestBid, bestAsk });
       }
-    } else if (event_type === 'price_change' && message.price_changes) {
+    } 
+    // 处理价格变化
+    else if (event_type === 'price_change' && message.price_changes) {
       message.price_changes.forEach((change: any) => {
         const asset_id = change.asset_id;
         const price = change.price ? parseFloat(change.price) : null;
@@ -314,8 +377,14 @@ class PolymarketService {
           this.updatePrice(asset_id, { price: midPrice, bestBid, bestAsk });
         }
       });
-    } else if (event_type) {
-      logger.debug(`其他消息: ${event_type}`);
+    }
+    // 处理其他消息类型
+    else if (event_type) {
+      logger.debug(`其他消息类型: ${event_type}`);
+      // 记录完整消息以便调试
+      if (process.env.NODE_ENV === 'development') {
+        logger.debug(`消息内容: ${JSON.stringify(message).slice(0, 200)}...`);
+      }
     }
   }
 
@@ -335,6 +404,8 @@ class PolymarketService {
       logger.debug(`⏭️ 已订阅过 ${assetId.slice(0, 8)}...，跳过`);
       return;
     }
+
+    // Token 验证将在 flushSubscriptions 中进行
 
     // 验证 Token ID 格式（应该是以 0x 开头的十六进制字符串，或纯数字字符串）
     if (!assetId || (typeof assetId !== 'string') || assetId.length === 0) {
@@ -357,10 +428,48 @@ class PolymarketService {
   }
 
   /**
+   * 验证 Token ID 是否有效（通过获取订单簿）
+   */
+  private async validateToken(tokenId: string): Promise<boolean> {
+    try {
+      // 配置代理（如果需要）
+      const axiosConfig: any = {
+        params: { token_id: tokenId },
+        timeout: 5000,
+      };
+      
+      // 获取代理配置
+      const proxy = config.polymarket.wsProxy;
+      if (proxy && proxy !== 'none') {
+        const { HttpsProxyAgent } = await import('https-proxy-agent');
+        axiosConfig.httpsAgent = new HttpsProxyAgent(proxy);
+        axiosConfig.httpAgent = new HttpsProxyAgent(proxy);
+      }
+      
+      // 使用 CLOB API 获取订单簿来验证 token 是否有效
+      const response = await axios.get(`${this.clobApiUrl}/book`, axiosConfig);
+      
+      // 如果能成功获取订单簿，说明 token 有效
+      return response.status === 200 && response.data;
+    } catch (error) {
+      logger.debug(`Token ${tokenId.slice(0, 8)}... 验证失败:`, (error as any).message);
+      return false;
+    }
+  }
+
+  /**
    * 批量发送订阅请求
    */
-  private flushSubscriptions(): void {
+  private async flushSubscriptions(): Promise<void> {
     if (this.pendingSubscriptions.size === 0) {
+      return;
+    }
+
+    // 检查 WebSocket 连接状态
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      logger.warn(`⚠️ WebSocket 未连接 (状态: ${this.ws?.readyState}), 无法订阅 ${this.pendingSubscriptions.size} 个市场`);
+      // 延迟重试
+      setTimeout(() => this.flushSubscriptions(), 1000);
       return;
     }
 
@@ -368,22 +477,37 @@ class PolymarketService {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       const assetsToSubscribe = Array.from(this.pendingSubscriptions);
       
-      // 🔧 分批订阅，每批最多 10 个 tokens（避免服务器拒绝）
-      const BATCH_SIZE = 10;
+      // 🔧 分批订阅，每批只订阅 1 个 token（避免服务器拒绝）
+      const BATCH_SIZE = 1;
       const batches: string[][] = [];
       
       for (let i = 0; i < assetsToSubscribe.length; i += BATCH_SIZE) {
         batches.push(assetsToSubscribe.slice(i, i + BATCH_SIZE));
       }
       
-      // 验证所有 Token ID
-      const validAssets = assetsToSubscribe.filter(id => {
+      // 验证所有 Token ID 格式
+      const formatValidAssets = assetsToSubscribe.filter(id => {
         if (!id || typeof id !== 'string' || id.length === 0) {
           logger.warn(`⚠️ 跳过无效 Token ID: ${id}`);
           return false;
         }
+        
+        // 检查 Token ID 格式，必须是数字或十六进制字符串
+        const isHexString = /^0x[0-9a-fA-F]+$/.test(id);
+        const isNumericString = /^\d+$/.test(id);
+        
+        if (!isHexString && !isNumericString) {
+          logger.warn(`⚠️ 跳过格式不正确的 Token ID: ${id}`);
+          return false;
+        }
+        
         return true;
       });
+
+      // 暂时跳过 Token 验证，直接使用格式验证通过的 Token
+      // TODO: 后续可以启用 Token 验证来过滤无效的 Token
+      const validAssets = formatValidAssets;
+      logger.info(`📋 跳过 Token 验证，使用 ${validAssets.length} 个格式有效的 Token`);
       
       if (validAssets.length === 0) {
         logger.warn(`⚠️ 没有有效的 Token ID 需要订阅`);
@@ -402,36 +526,60 @@ class PolymarketService {
       
       // 依次发送每一批
       validBatches.forEach((batch, batchIndex) => {
-        const subscribeMessage = {
-          type: 'market',
-          assets_ids: batch,
-          initial_dump: true
+        // 根据 Polymarket API 文档要求，assets_ids 应该是原始的数字字符串
+        // 不需要转换为十六进制格式
+        
+        // 根据订阅格式选择不同的消息格式
+        let subscribeMessage;
+        
+        // 使用标准的 Polymarket WebSocket 订阅格式
+        // 注意：每批只订阅一个 token，所以 batch 数组只有一个元素
+        subscribeMessage = {
+          type: "market",
+          assets_ids: batch,  // ✅ 使用原始的数字字符串，不转换为十六进制
+          initial_dump: true  // 请求初始数据快照
         };
+        
+        logger.debug('   使用标准 Polymarket WebSocket 订阅格式');
         
         const messageString = JSON.stringify(subscribeMessage);
         
         logger.info(`   📦 批次 ${batchIndex + 1}/${validBatches.length}: ${batch.length} 个 tokens`);
-        batch.slice(0, 3).forEach((assetId, index) => {
-          logger.debug(`      Token ${index + 1}: ${assetId.slice(0, 16)}...`);
+        
+        // 输出 Token ID
+        batch.forEach((assetId, index) => {
+          if (index < 3) { // 只显示前 3 个以避免输出过多
+            logger.debug(`      Token ${index + 1}: ${assetId.slice(0, 16)}...`);
+          }
         });
         
+        // 输出完整的订阅消息以便调试
+        logger.info(`   📨 订阅消息: ${messageString}`);
+        
         // 延迟发送每一批（避免过快）
+        // 首批延迟1000ms确保连接稳定，后续批次间隔1000ms
+        const delayMs = (batchIndex + 1) * 1000;
         setTimeout(() => {
           if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(messageString);
-            logger.debug(`   ✅ 批次 ${batchIndex + 1} 已发送`);
-            this.lastSubscribeTime = Date.now();
-            
-            // 只有成功发送后才标记为已订阅
-            batch.forEach(assetId => {
-              this.subscribedAssets.add(assetId);
-            });
-            
-            logger.info(`   📊 当前已订阅: ${this.subscribedAssets.size} 个市场`);
+            try {
+              this.ws.send(messageString);
+              logger.debug(`   ✅ 批次 ${batchIndex + 1} 已发送`);
+              logger.debug(`   消息内容: ${messageString}`);
+              this.lastSubscribeTime = Date.now();
+              
+              // 只有成功发送后才标记为已订阅
+              batch.forEach(assetId => {
+                this.subscribedAssets.add(assetId);
+              });
+              
+              logger.info(`   📊 当前已订阅: ${this.subscribedAssets.size} 个市场`);
+            } catch (error) {
+              logger.error(`   ❌ 批次 ${batchIndex + 1} 发送异常:`, error);
+            }
           } else {
-            logger.warn(`   ⚠️ 批次 ${batchIndex + 1} 发送失败：WebSocket 未连接`);
+            logger.warn(`   ⚠️ 批次 ${batchIndex + 1} 发送失败：WebSocket 未连接 (状态: ${this.ws?.readyState})`);
           }
-        }, batchIndex * 200); // 每批间隔增加到 200ms，避免速率限制
+        }, delayMs);
       });
       
       // 清空待订阅列表
@@ -453,13 +601,17 @@ class PolymarketService {
 
         // 发送取消订阅消息到 WebSocket
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          // 使用 operation 字段进行动态操作（取消订阅）
+          // 格式：{ "assets_ids": ["..."], "operation": "unsubscribe" }
           const unsubscribeMessage = {
-            type: 'unsubscribe',
-            channel: 'market',
-            markets: [marketId],
+            assets_ids: [marketId], // 使用原始的数字字符串 ID
+            operation: "unsubscribe"
           };
           this.ws.send(JSON.stringify(unsubscribeMessage));
           logger.debug(`已取消订阅市场: ${marketId}`);
+          
+          // 从已订阅列表中移除
+          this.subscribedAssets.delete(marketId);
         }
       }
     }
@@ -823,10 +975,27 @@ class PolymarketService {
    * 断开 WebSocket 连接
    */
   disconnect(): void {
-    this.stopHeartbeat(); // 停止心跳定时器
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    try {
+      // 停止心跳定时器
+      this.stopHeartbeat();
+      this.stopConnectionCheck();
+      
+      // 安全关闭 WebSocket
+      if (this.ws) {
+        if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+          try {
+            this.ws.close(1000, '正常关闭');
+          } catch (closeError) {
+            logger.warn('关闭 WebSocket 时出错，已忽略:', closeError);
+          }
+        }
+        this.ws = null;
+      }
+      
+      logger.info('WebSocket 连接已断开');
+    } catch (error) {
+      logger.error('断开 WebSocket 连接时出错:', error);
+      // 即使出错也不抛出异常
     }
   }
 }

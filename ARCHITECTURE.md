@@ -133,7 +133,7 @@ class ESPNService {
 - ✅ 支持日期参数查询未来比赛
 - ✅ 使用 Summary API 获取完整数据
 - ✅ 从 MoneyLine 计算隐含概率
-- ✅ 解析伤病详情
+
 
 ### Polymarket Service
 

@@ -92,8 +92,9 @@ npm start
 - ⚡ **毫秒级实时更新** - WebSocket 推送，价格延迟 < 1秒
 - 🔄 **多源数据整合** - ESPN 赔率 + Polymarket 预测市场
 - 💰 **自动套利检测** - EV+ 模型，利润空间 > 10% 触发
-- 🤖 **Paper Trading** - 内存模拟交易，自动买卖，实时盈亏
+- 🤖 **Paper Trading** - Q1-Q3 价值回归策略，混合离场机制
 - 💸 **真实价格模拟** - 买入用 Ask，卖出用 Bid，包含滑点
+- 🎯 **智能离场** - 获利了结(25%) + 逻辑证伪 + 硬止损(50%)
 - 📊 **数据可视化** - ESPN 风格胜率曲线，交互式悬停
 - 🎯 **智能匹配** - 三层漏斗精准匹配球队和市场
 - ⏰ **时间控制** - 只做 Q1-Q3，避免第四节赌博逻辑
@@ -212,12 +213,12 @@ yhrsc30@gmail.com
 
 ## 📚 文档索引
 
-- 🏗️ [系统架构](./docs/ARCHITECTURE.md) - 完整的架构设计和数据流
-- 💰 [价格使用指南](./docs/PRICE_GUIDE.md) - Bid/Ask/Mid 价格详解
-- ⭐ [价格使用总结](./docs/PRICE_USAGE_SUMMARY.md) - 买入/卖出价格使用规范（重要）
-- 📡 [WebSocket 订阅指南](./docs/WEBSOCKET_LIMITS.md) - 连接健康检查和最佳实践
-- 🤖 [Paper Trading 说明](./docs/ARCHITECTURE.md#paper-trading模拟交易) - 模拟交易使用指南
-- 🎯 [套利策略](./docs/ARCHITECTURE.md#套利引擎arbitrageengine) - EV+ 决策模型说明
+- 📖 **[DOCS.md](./DOCS.md)** - 完整文档总览 ⭐ **推荐**
+- 🏗️ **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - 系统架构设计
+- 💰 **[docs/PRICE_GUIDE.md](./docs/PRICE_GUIDE.md)** - Bid/Ask/Mid 价格详解
+- 🔧 **[server/README.md](./server/README.md)** - 后端服务文档
+- 🎨 **[client/README.md](./client/README.md)** - 前端应用文档
+- 🎯 **[client/SIGNALS_GUIDE.md](./client/SIGNALS_GUIDE.md)** - 套利信号详解
 
 ## 💼 Paper Trading 快速入门
 

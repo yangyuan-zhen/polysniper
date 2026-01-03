@@ -1,15 +1,15 @@
-# PolySniper Backend
+# 🎯 PolySniper Backend
 
-Node.js 后端服务，为 PolySniper NBA 预测市场监控系统提供数据聚合和套利计算。
+NBA 套利监控平台后端服务 - 基于 Node.js + TypeScript 构建的高性能数据聚合和套利计算引擎。
 
 ## 📚 完整文档
 
-- **[API.md](./API.md)** - 📡 REST API & WebSocket 接口完整说明（含示例代码）⭐ **推荐**
-- **[docs/PRICE_RETRIEVAL.md](./docs/PRICE_RETRIEVAL.md)** - 💰 Polymarket 价格获取指南 ⭐ **NEW**
-- **[DEVELOPMENT.md](./DEVELOPMENT.md)** - 🛠️ 开发指南和架构说明
-- **[TEAM_MAPPINGS.md](./TEAM_MAPPINGS.md)** - 🏀 NBA 球队映射配置说明
-- **[WEBSOCKET.md](./WEBSOCKET.md)** - 🔌 WebSocket 使用说明
-- **[FINAL_SUMMARY.md](./FINAL_SUMMARY.md)** - 📝 项目完成总结
+- **[API.md](./API.md)** - 📡 REST API & WebSocket 接口完整说明 ⭐ **推荐**
+- **[DATABASE.md](./DATABASE.md)** - 🗄️ SQLite 数据库使用指南 ⭐ **新增**
+- **[docs/PRICE_RETRIEVAL.md](./docs/PRICE_RETRIEVAL.md)** - 💰 Polymarket 价格获取指南
+- **[docs/WEBSOCKET.md](./docs/WEBSOCKET.md)** - 🔌 WebSocket 连接和订阅指南
+- **[docs/PUBLIC_API_MODE.md](./docs/PUBLIC_API_MODE.md)** - 🌐 公共 API 模式说明
+- **[TEAM_MAPPINGS.md](./TEAM_MAPPINGS.md)** - 🏀 NBA 球队映射配置
 
 ---
 
@@ -25,14 +25,14 @@ Node.js 后端服务，为 PolySniper NBA 预测市场监控系统提供数据�
   - Layer 3: 时间校验（防止匹配错误）
   - **匹配成功率: 100%** ✅
 
-### 套利引擎
-- **智能信号计算**: 基于价格差、胜率差、比分、时间等多因素分析
-- **4种交易策略**:
-  - 主队抄底（强队价格低于预期）
-  - 主队套现（价格过高，领先明显）
-  - 客队抄底
-  - 客队套现
-- **置信度评分**: 0-1范围，综合考虑Edge大小、流动性、时间因素
+### 套利引擎 & Paper Trading
+- **EV+ 决策模型**: ESPN胜率 - Polymarket Ask价格 > 10% 触发买入
+- **Q1-Q3 价值回归策略**: 只在前三节交易，避免第四节赌博逻辑
+- **混合离场策略**:
+  - 💰 获利了结: 收益率 >= 25% 时卖出
+  - 📉 逻辑证伪: 当前价格 >= ESPN胜率时卖出
+  - 🛑 硬止损: 价格 <= $0.15 或损失 >= 50% 时卖出
+- **真实价格模拟**: 买入用Ask，卖出用Bid，包含滑点
 
 ### API 服务
 - **REST API**: 获取比赛数据、套利信号、统计信息
@@ -45,6 +45,7 @@ Node.js 后端服务，为 PolySniper NBA 预测市场监控系统提供数据�
 - **运行环境**: Node.js 18+, TypeScript
 - **Web框架**: Express.js
 - **实时通信**: Socket.IO, WebSocket
+- **数据库**: SQLite 3 (轻量级本地数据库)
 - **缓存**: Redis (可选降级为内存缓存)
 - **HTTP客户端**: Axios
 - **日志**: Winston
@@ -58,7 +59,14 @@ Node.js 后端服务，为 PolySniper NBA 预测市场监控系统提供数据�
 npm install
 ```
 
-### 2. 配置环境变量
+### 2. 初始化数据库
+
+```bash
+# 自动创建 SQLite 数据库和表结构
+npm run init-db
+```
+
+### 3. 配置环境变量
 
 复制 `.env.example` 为 `.env` 并配置：
 

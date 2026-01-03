@@ -1,184 +1,242 @@
-// 比赛状态
-export enum MatchStatus {
-  PRE = 'PRE',       // 未开始
-  LIVE = 'LIVE',     // 进行中
-  FINAL = 'FINAL',   // 已结束
+// =============================================================================
+// 后端专用类型定义
+// =============================================================================
+// 这个文件引用共享类型，并添加后端特有的类型定义
+
+// 导入所有共享类型
+export * from '@shared/types';
+
+// =============================================================================
+// 后端特有类型（不与前端共享）
+// =============================================================================
+
+/** 服务器配置 */
+export interface ServerConfig {
+  port: number;
+  host: string;
+  cors: {
+    origin: string[];
+    credentials: boolean;
+  };
+  rateLimit: {
+    windowMs: number;
+    max: number;
+  };
 }
 
-// 交易信号类型
-export enum SignalType {
-  BUY_HOME = 'BUY_HOME',
-  SELL_HOME = 'SELL_HOME',
-  BUY_AWAY = 'BUY_AWAY',
-  SELL_AWAY = 'SELL_AWAY',
-  NONE = 'NONE',
+/** ESPN API 响应的原始数据结构 */
+export interface ESPNRawResponse {
+  events: Array<{
+    id: string;
+    name: string;
+    shortName: string;
+    date: string;
+    competitions: Array<{
+      id: string;
+      competitors: Array<{
+        id: string;
+        team: {
+          id: string;
+          name: string;
+          displayName: string;
+          abbreviation: string;
+          logo: string;
+        };
+        score: number;
+        homeAway: 'home' | 'away';
+      }>;
+      status: {
+        type: {
+          id: string;
+          name: string;
+          state: string;
+          completed: boolean;
+          description: string;
+          detail: string;
+          shortDetail: string;
+        };
+        period: number;
+        clock: number;
+        displayClock: string;
+      };
+      odds?: Array<{
+        provider: {
+          name: string;
+          priority: number;
+        };
+        details: Array<{
+          odds: number;
+          type: string;
+        }>;
+      }>;
+    }>;
+  }>;
 }
 
-// 球队信息
-export interface Team {
-  id: string;           // 球队ID（如 "LAL"）
-  name: string;         // 球队名称（如 "Lakers"）
-  score: number;        // 当前比分
-  logo?: string;        // 球队logo URL
+/** Polymarket Gamma API 原始响应 */
+export interface PolymarketRawResponse {
+  events: Array<{
+    id: string;
+    title: string;
+    description: string;
+    start_date: string;
+    end_date?: string;
+    active: boolean;
+    closed: boolean;
+    liquidity: number;
+    volume: number;
+    outcome_tokens: Array<{
+      outcome: string;
+      price: number;
+      token_id: string;
+      shares: number;
+      volume: number;
+    }>;
+  }>;
 }
 
-// ESPN 数据
-export interface ESPNData {
-  homeWinProb: number;      // 主队实时胜率（进行中）
-  awayWinProb: number;      // 客队实时胜率（进行中）
-  pregameHomeWinProb: number; // 主队赛前胜率
-  pregameAwayWinProb: number; // 客队赛前胜率
-  injuries?: any[];         // 伤病报告数据
+/** 数据源状态 */
+export interface DataSourceStatus {
+  espn: {
+    connected: boolean;
+    lastUpdate: number;
+    error?: string;
+  };
+  polymarket: {
+    connected: boolean;
+    lastUpdate: number;
+    error?: string;
+  };
 }
 
-// Polymarket 市场数据
-export interface PolymarketData {
-  marketId: string;
-  homeTokenId: string;
-  awayTokenId: string;
-  homePrice: number;        // 主队中间价 (0-1) - 用于显示
-  awayPrice: number;        // 客队中间价 (0-1) - 用于显示
-  homeBestBid?: number;     // 主队最高买价 - 卖出时收到的价格
-  homeBestAsk?: number;     // 主队最低卖价 - 买入时支付的价格
-  awayBestBid?: number;     // 客队最高买价
-  awayBestAsk?: number;     // 客队最低卖价
-  homeVolume?: number;      // 主队交易量
-  awayVolume?: number;      // 客队交易量
-  liquidity?: number;       // 流动性
-  endDate?: string;         // 市场结束时间（用于 Layer 3 时间校验）
-}
-
-
-// 套利信号
-export interface ArbitrageSignal {
-  type: SignalType;
-  confidence: number;       // 0-1，置信度
-  edge: number;            // 预期收益率（百分比）
-  reason: string;          // 信号原因说明
+/** 服务器健康状态 */
+export interface HealthStatus {
+  status: 'healthy' | 'degraded' | 'unhealthy';
   timestamp: number;
-  // 详细计算数据
-  details: {
-    espnProb: number;      // ESPN胜率
-    polyPrice: number;     // Polymarket价格
-    priceDiff: number;     // 价格差异
-    scoreDiff: number;     // 比分差异
-    timeRemaining: string; // 剩余时间
+  uptime: number;
+  memory: {
+    used: number;
+    total: number;
+    percentage: number;
+  };
+  dataSources: DataSourceStatus;
+  activeConnections: number;
+}
+
+/** 统计信息 */
+export interface ServerStats {
+  totalMatches: number;
+  liveMatches: number;
+  matchesWithSignals: number;
+  totalSignals: number;
+  avgConfidence: string;
+  dataCompleteness: {
+    withPolyData: number;
+    withESPNData: number;
   };
 }
 
-// 统一的比赛数据（核心数据模型）
-export interface UnifiedMatch {
-  id: string;              // 唯一ID: "LAL-GSW-20231215"
-  
-  // 基础信息
-  homeTeam: Team;
-  awayTeam: Team;
-  
-  // 比赛状态（来源：虎扑）
-  status: MatchStatus;
-  statusStr: string;       // "Q4 02:30" 或 "未开始" 或 "已结束"
-  startTime?: string;      // 比赛开始时间
-  
-  // Polymarket 数据
-  poly: PolymarketData;
-  
-  // ESPN 数据
-  espn: ESPNData;
-  
-  // 套利信号（后端计算）
-  signals: ArbitrageSignal[];
-  
-  // 元数据
-  lastUpdate: number;      // 最后更新时间戳
-  dataCompleteness: {      // 数据完整性标记
-    hasPolyData: boolean;
-    hasESPNData: boolean;
-  };
+/** 缓存统计 */
+export interface CacheStats {
+  hits: number;
+  misses: number;
+  hitRate: number;
+  keys: number;
+  memoryUsage: number;
 }
 
-// API 响应格式
-export interface ApiResponse<T = any> {
-  success: boolean;
-  data?: T;
+/** 日志级别 */
+export enum LogLevel {
+  ERROR = 'error',
+  WARN = 'warn',
+  INFO = 'info',
+  DEBUG = 'debug',
+}
+
+/** 日志条目 */
+export interface LogEntry {
+  level: LogLevel;
+  message: string;
+  timestamp: number;
+  context?: any;
   error?: {
-    code: string;
+    name: string;
     message: string;
-    details?: any;
+    stack?: string;
   };
-  timestamp: string;
-  cached?: boolean;
 }
 
-// WebSocket 消息类型
-export interface WSMessage {
-  type: 'priceUpdate' | 'marketStatusChange' | 'connectionStatus' | 'signalAlert';
-  data: any;
-  timestamp: number;
+/** 环境变量配置 */
+export interface EnvConfig {
+  NODE_ENV: 'development' | 'production' | 'test';
+  PORT: number;
+  ESPN_API_URL: string;
+  POLYMARKET_API_URL: string;
+  REDIS_URL?: string;
+  REDIS_HOST?: string;
+  REDIS_PORT?: number;
+  LOG_LEVEL: LogLevel;
+  CORS_ORIGIN: string[];
+  RATE_LIMIT_WINDOW_MS: number;
+  RATE_LIMIT_MAX_REQUESTS: number;
 }
 
-// 缓存键类型
-export enum CacheKey {
-  ESPN_SCORES = 'espn_scores',
-  MARKETS = 'polymarket_markets',
-  MATCH = 'polymarket_match',
+// =============================================================================
+// 类型守卫和工具函数
+// =============================================================================
+
+/** 检查是否为有效的环境变量配置 */
+export function isValidEnvConfig(config: Partial<EnvConfig>): config is EnvConfig {
+  return (
+    typeof config.NODE_ENV === 'string' &&
+    typeof config.PORT === 'number' &&
+    typeof config.ESPN_API_URL === 'string' &&
+    typeof config.POLYMARKET_API_URL === 'string' &&
+    typeof config.LOG_LEVEL === 'string'
+  );
 }
 
-// ============ Paper Trading 模拟交易 ============
-
-// 订单类型
-export enum OrderType {
-  BUY = 'BUY',
-  SELL = 'SELL',
+/** 创建默认的服务器配置 */
+export function createDefaultServerConfig(): ServerConfig {
+  return {
+    port: 3000,
+    host: '0.0.0.0',
+    cors: {
+      origin: ['http://localhost:5173', 'http://localhost:3000'],
+      credentials: true,
+    },
+    rateLimit: {
+      windowMs: 15 * 60 * 1000, // 15 分钟
+      max: 100, // 限制每个 IP 100 次请求
+    },
+  };
 }
 
-// 订单状态
-export enum OrderStatus {
-  PENDING = 'PENDING',   // 等待成交
-  FILLED = 'FILLED',     // 已成交
-  CLOSED = 'CLOSED',     // 已平仓
+/** 格式化内存大小 */
+export function formatMemorySize(bytes: number): string {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let size = bytes;
+  let unitIndex = 0;
+  
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
+  }
+  
+  return `${size.toFixed(2)} ${units[unitIndex]}`;
 }
 
-// 订单记录
-export interface Order {
-  id: string;                    // 订单ID
-  matchId: string;               // 比赛ID
-  type: OrderType;               // 买入/卖出
-  status: OrderStatus;           // 订单状态
-  team: string;                  // 队名
-  tokenId: string;               // Token ID
-  quantity: number;              // 数量（份额）
-  entryPrice: number;            // 开仓价格
-  exitPrice?: number;            // 平仓价格
-  currentPrice: number;          // 当前价格
-  pnl: number;                   // 盈亏（美元）
-  pnlPercent: number;            // 盈亏百分比
-  reason: string;                // 交易原因（信号描述）
-  confidence: number;            // 信号置信度
-  timestamp: number;             // 开仓时间
-  closeTimestamp?: number;       // 平仓时间
-}
-
-// 持仓记录
-export interface Position {
-  matchId: string;
-  team: string;
-  tokenId: string;
-  quantity: number;              // 持有数量
-  avgCost: number;               // 平均成本
-  currentPrice: number;          // 当前价格
-  unrealizedPnl: number;         // 未实现盈亏
-  unrealizedPnlPercent: number;  // 未实现盈亏百分比
-}
-
-// 账户状态
-export interface AccountStatus {
-  balance: number;               // 可用余额
-  equity: number;                // 总权益（余额+持仓市值）
-  positions: Position[];         // 当前持仓
-  openOrders: Order[];           // 未平仓订单
-  closedOrders: Order[];         // 已平仓订单
-  totalTrades: number;           // 总交易次数
-  winRate: number;               // 胜率
-  totalPnl: number;              // 总盈亏
-  totalPnlPercent: number;       // 总盈亏百分比
+/** 计算运行时间 */
+export function formatUptime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${secs}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${secs}s`;
+  } else {
+    return `${secs}s`;
+  }
 }

@@ -3,7 +3,8 @@ import { espnService } from './espnService';
 import { polymarketService } from './polymarketService';
 import { arbitrageEngine } from './arbitrageEngine';
 import { paperTradingService } from './paperTradingService';
-import { UnifiedMatch, MatchStatus } from '../types';
+import { databaseService } from './databaseService';
+import { UnifiedMatch, MatchStatus } from '../../../shared/types/index';
 import { config } from '../config';
 import { NBA_TEAMS } from '../config/teamMappings';
 
@@ -22,20 +23,36 @@ class DataAggregator {
    * 启动数据采集
    */
   async start(): Promise<void> {
-    logger.info('正在启动数据聚合器...');
+    logger.info('🔍 启动数据聚合器...');
 
-    // 初始化 Polymarket WebSocket（如果启用）
-    logger.info(`🔍 WebSocket 配置: wsEnabled=${config.polymarket.wsEnabled}, wsUrl=${config.polymarket.wsUrl}`);
-    
-    if (config.polymarket.wsEnabled) {
-      logger.info('🚀 启动 Polymarket WebSocket 连接...');
-      await polymarketService.connectWebSocket();
-    } else {
-      logger.info('⚠️ Polymarket WebSocket 已禁用，仅使用 REST API');
+    // 初始化数据库服务
+    try {
+      await databaseService.initialize();
+      await paperTradingService.initialize();
+    } catch (error) {
+      logger.error('数据库初始化失败:', error);
+      throw error;
     }
 
-    // 首次加载数据
-    await this.updateAllMatches();
+    // 尝试启动 WebSocket 连接，但即使失败也继续运行
+    if (config.polymarket.wsEnabled) {
+      try {
+        await polymarketService.connectWebSocket();
+      } catch (error) {
+        logger.error('连接 Polymarket WebSocket 失败，但将继续使用 REST API:', error);
+        // 即使 WebSocket 连接失败，也不影响服务器运行
+      }
+    } else {
+      logger.info('WebSocket 连接已禁用，将只使用 REST API');
+    }
+
+    // 立即获取一次数据
+    try {
+      await this.updateMatches();
+    } catch (error) {
+      logger.error('初始化数据获取失败:', error);
+      // 即使初始化失败，也不影响服务器运行
+    }
 
     // 启动动态更新循环
     this.startDynamicUpdate();
@@ -49,7 +66,7 @@ class DataAggregator {
   private startDynamicUpdate(): void {
     const update = async () => {
       try {
-        await this.updateAllMatches();
+        await this.updateMatches();
         
         // 检查长时间未更新的市场
         this.checkStaleSubscriptions();
@@ -83,15 +100,25 @@ class DataAggregator {
    * 停止数据采集
    */
   stop(): void {
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
-      this.updateInterval = null;
-    }
+    try {
+      if (this.updateInterval) {
+        clearInterval(this.updateInterval);
+        this.updateInterval = null;
+      }
 
-    if (config.polymarket.wsEnabled) {
-      polymarketService.disconnect();
+      if (config.polymarket.wsEnabled) {
+        try {
+          polymarketService.disconnect();
+        } catch (error) {
+          logger.warn('断开 WebSocket 连接时出错，已忽略:', error);
+          // 忽略错误，继续执行
+        }
+      }
+      logger.info('数据聚合器已停止');
+    } catch (error) {
+      logger.error('停止数据聚合器时出错:', error);
+      // 即使出错也不抛出异常，确保服务器可以平滑关闭
     }
-    logger.info('数据聚合器已停止');
   }
 
   /**
@@ -122,7 +149,7 @@ class DataAggregator {
   /**
    * 更新所有比赛数据（使用 ESPN 作为主数据源）
    */
-  private async updateAllMatches(): Promise<void> {
+  private async updateMatches(): Promise<void> {
     try {
       // 获取未来3天的比赛数据
       // 注意：ESPN API 使用美国时区，比中国时间晚约12-16小时
@@ -182,7 +209,16 @@ class DataAggregator {
       this.hasLiveMatches = liveGames.length > 0;
 
       if (this.hasLiveMatches) {
-        logger.info(`🔴 ${liveGames.length} 场比赛进行中，更新频率: 2秒`);
+        logger.info(`🔄 开始更新 ${activeGames.length} 场比赛的数据...`);
+    
+    // 调试：输出所有比赛的基本信息
+    activeGames.forEach((game, index) => {
+      const competition = game.competitions?.[0];
+      const homeTeam = competition?.competitors?.find((c: any) => c.homeAway === 'home')?.team?.displayName || 'Unknown';
+      const awayTeam = competition?.competitors?.find((c: any) => c.homeAway === 'away')?.team?.displayName || 'Unknown';
+      logger.debug(`  比赛 ${index + 1}: ${homeTeam} vs ${awayTeam} (开始时间: ${game.date})`);
+    });
+        logger.info(`进行中，更新频率: 2秒`);
       } else {
         logger.info(`⚪ ${activeGames.length} 场比赛未开始，更新频率: 5秒`);
       }
@@ -248,20 +284,36 @@ class DataAggregator {
       const polyData = polyResult.value;
       
       // ========== 第三层：时间校验 (Time Validation) ==========
-      // 条件：Polymarket 的 endDate 不能早于虎扑的 startTime
-      // 说明：endDate 等于 startTime 是正常的（市场在比赛开始时关闭）
-      // 目的：防止匹配到未来同名对决或异常未结算的历史盘口
+      // 条件：优先考虑比赛状态，对正在进行的比赛放宽时间限制
+      // 目的：避免订阅已结束比赛的 token，但不要错过正在进行的比赛
       let timeValid = true;
-      if (polyData.endDate && match.startTime) {
+      const now = Date.now();
+      
+      // 如果比赛正在进行中，直接允许订阅（忽略 endDate）
+      if (match.status === MatchStatus.LIVE) {
+        logger.debug(`[Layer 3] ✅ 比赛进行中，强制允许订阅: ${match.statusStr}`);
+        timeValid = true;
+      } else if (polyData.endDate) {
         const polyEndTime = new Date(polyData.endDate).getTime();
-        const startTime = new Date(match.startTime).getTime();
+        // 给予1小时的缓冲时间，因为市场结算可能延迟
+        const bufferTime = 60 * 60 * 1000; // 1小时缓冲
         
-        // 只有当 endDate 明显早于 startTime 时才拒绝（允许相等）
-        if (polyEndTime < startTime) {
-          logger.warn(`[Layer 3] ⚠️ 时间校验失败: Polymarket endDate (${polyData.endDate}) < startTime (${match.startTime})`);
+        if (polyEndTime + bufferTime < now) {
+          logger.warn(`[Layer 3] ⚠️ 跳过已结束的市场: endDate (${polyData.endDate}) + 1小时 < 当前时间`);
           timeValid = false;
         } else {
-          logger.debug(`[Layer 3] ✅ 时间校验通过: endDate >= startTime`);
+          logger.debug(`[Layer 3] ✅ 市场未结束，可以订阅: endDate (${polyData.endDate}) + 缓冲时间 > 当前时间`);
+        }
+      } else if (match.startTime) {
+        // 如果没有 endDate，检查比赛开始时间
+        const startTime = new Date(match.startTime).getTime();
+        const gameEndTime = startTime + (5 * 60 * 60 * 1000); // 比赛开始后5小时（增加1小时缓冲）
+        
+        if (gameEndTime < now) {
+          logger.warn(`[Layer 3] ⚠️ 跳过已结束的比赛: 预计结束时间 + 缓冲 < 当前时间`);
+          timeValid = false;
+        } else {
+          logger.debug(`[Layer 3] ✅ 比赛未结束，可以订阅`);
         }
       }
       
@@ -297,8 +349,15 @@ class DataAggregator {
     }
 
     // 计算套利信号
-    if (match.dataCompleteness.hasPolyData && match.dataCompleteness.hasESPNData) {
+    if (match.dataCompleteness.hasPolyData) {
+      logger.debug(`🔍 计算套利信号: ${match.homeTeam.name} vs ${match.awayTeam.name}`);
       match.signals = arbitrageEngine.calculateSignals(match);
+      
+      if (match.signals.length > 0) {
+        logger.info(`🎯 发现 ${match.signals.length} 个套利信号!`);
+      } else {
+        logger.debug(`❌ 未发现套利信号`);
+      }
       
       // 记录发现的套利机会
       if (match.signals.length > 0) {
@@ -306,7 +365,7 @@ class DataAggregator {
         match.signals.forEach((signal: any) => {
           logger.info(`  - ${signal.type}: ${signal.reason} (置信度: ${(signal.confidence * 100).toFixed(1)}%)`);
           
-          // 🤖 Paper Trading: 自动执行模拟交易
+          // 🤖 Paper Trading: 自动执行模拟交易（包含战场情况）
           // 注意：买入时使用 bestAsk（最低卖价），卖出时使用 bestBid（最高买价）
           paperTradingService.executeSignal(
             signal,
@@ -318,20 +377,38 @@ class DataAggregator {
             match.poly.homeBestAsk,  // 买入价
             match.poly.awayBestAsk,  // 买入价
             match.poly.homePrice,    // 中间价（备用）
-            match.poly.awayPrice     // 中间价（备用）
+            match.poly.awayPrice,    // 中间价（备用）
+            // 战场情况
+            match.homeTeam.score,
+            match.awayTeam.score,
+            match.status,
+            undefined, // quarter - 暂时没有
+            undefined, // timeRemaining - 暂时没有
+            match.espn?.homeWinProb || match.espn?.pregameHomeWinProb,
+            match.espn?.awayWinProb || match.espn?.pregameAwayWinProb
           );
         });
       }
       
-      // 📊 Paper Trading: 更新持仓价格（实时计算浮盈浮亏）
+      // 📊 Paper Trading: 更新持仓价格（实时计算浮盈浮亏）+ 混合离场策略
       // 注意：使用 bestBid（卖出价）计算浮盈，如果没有则使用 midPrice
       if (match.poly) {
+        // 获取当前 ESPN 胜率用于离场策略
+        const espnHomeProb = match.espn ? (match.status === MatchStatus.PRE ? match.espn.pregameHomeWinProb : match.espn.homeWinProb) : undefined;
+        const espnAwayProb = match.espn ? (match.status === MatchStatus.PRE ? match.espn.pregameAwayWinProb : match.espn.awayWinProb) : undefined;
+        
         paperTradingService.updatePositionPrice(
           matchId,
           match.poly.homeTokenId,
           match.poly.awayTokenId,
           match.poly.homeBestBid || match.poly.homePrice, // 使用 bestBid（卖出价）
-          match.poly.awayBestBid || match.poly.awayPrice  // 使用 bestBid（卖出价）
+          match.poly.awayBestBid || match.poly.awayPrice, // 使用 bestBid（卖出价）
+          espnHomeProb, // 传递 ESPN 胜率用于逻辑证伪检查
+          espnAwayProb, // 传递 ESPN 胜率用于逻辑证伪检查
+          // 当前战场情况
+          match.homeTeam.score,
+          match.awayTeam.score,
+          match.status
         );
       }
     }
@@ -356,6 +433,43 @@ class DataAggregator {
 
     // 保存到内存
     this.matches.set(matchId, match);
+
+    // 💾 保存市场快照到数据库（用于回测）
+    this.saveMarketSnapshot(match);
+  }
+
+  /**
+   * 保存市场快照到数据库（用于回测分析）
+   */
+  private async saveMarketSnapshot(match: UnifiedMatch): Promise<void> {
+    try {
+      await databaseService.saveMarketSnapshot({
+        matchId: match.id,
+        homeTeam: match.homeTeam.name,
+        awayTeam: match.awayTeam.name,
+        homeScore: match.homeTeam.score,
+        awayScore: match.awayTeam.score,
+        matchStatus: match.status,
+        // ESPN 数据
+        espnHomeWinProb: match.espn?.homeWinProb,
+        espnAwayWinProb: match.espn?.awayWinProb,
+        espnPregameHomeWinProb: match.espn?.pregameHomeWinProb,
+        espnPregameAwayWinProb: match.espn?.pregameAwayWinProb,
+        // Polymarket 数据
+        polyHomePrice: match.poly?.homePrice,
+        polyAwayPrice: match.poly?.awayPrice,
+        polyHomeBestBid: match.poly?.homeBestBid,
+        polyHomeBestAsk: match.poly?.homeBestAsk,
+        polyAwayBestBid: match.poly?.awayBestBid,
+        polyAwayBestAsk: match.poly?.awayBestAsk,
+        polyHomeVolume: match.poly?.homeVolume,
+        polyAwayVolume: match.poly?.awayVolume,
+        // 套利信号
+        arbitrageSignals: match.signals
+      });
+    } catch (error) {
+      logger.error('保存市场快照失败:', error);
+    }
   }
 
   /**
@@ -446,16 +560,32 @@ class DataAggregator {
    * 使用 ESPN 队名搜索 Polymarket
    */
   private async searchPolymarketByESPNTeams(homeTeamName: string, awayTeamName: string): Promise<any> {
+    logger.debug(`🔍 搜索 Polymarket 市场: ${homeTeamName} vs ${awayTeamName}`);
+    
     // 将 ESPN 队名转换为中文名（用于 Polymarket 搜索）
     const homeTeam = NBA_TEAMS.find(t => t.espnName === homeTeamName);
     const awayTeam = NBA_TEAMS.find(t => t.espnName === awayTeamName);
 
     if (!homeTeam || !awayTeam) {
-      logger.debug(`未找到队名映射: ${homeTeamName} vs ${awayTeamName}`);
+      logger.warn(`❌ 未找到队名映射: ${homeTeamName} vs ${awayTeamName}`);
+      logger.debug(`   可用的 ESPN 队名: ${NBA_TEAMS.map(t => t.espnName).join(', ')}`);
       return null;
     }
 
-    return polymarketService.searchNBAMarkets(homeTeam.chineseName, awayTeam.chineseName);
+    logger.debug(`✅ 队名映射成功: ${homeTeamName} -> ${homeTeam.chineseName}, ${awayTeamName} -> ${awayTeam.chineseName}`);
+    
+    try {
+      const result = await polymarketService.searchNBAMarkets(homeTeam.chineseName, awayTeam.chineseName);
+      if (result) {
+        logger.debug(`✅ 找到 Polymarket 市场: ${homeTeam.chineseName} vs ${awayTeam.chineseName}`);
+      } else {
+        logger.warn(`❌ 未找到 Polymarket 市场: ${homeTeam.chineseName} vs ${awayTeam.chineseName}`);
+      }
+      return result;
+    } catch (error) {
+      logger.error(`❌ 搜索 Polymarket 市场失败: ${homeTeam.chineseName} vs ${awayTeam.chineseName}`, error);
+      return null;
+    }
   }
 
 
@@ -532,7 +662,7 @@ class DataAggregator {
         }
         
         // 重新计算套利信号
-        if (match.dataCompleteness.hasPolyData && match.dataCompleteness.hasESPNData) {
+        if (match.dataCompleteness.hasPolyData) {
           match.signals = arbitrageEngine.calculateSignals(match);
         }
       } else {
@@ -574,7 +704,7 @@ class DataAggregator {
         }
         
         // 重新计算套利信号
-        if (match.dataCompleteness.hasPolyData && match.dataCompleteness.hasESPNData) {
+        if (match.dataCompleteness.hasPolyData) {
           match.signals = arbitrageEngine.calculateSignals(match);
         }
       } else {

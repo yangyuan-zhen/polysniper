@@ -1,4 +1,4 @@
-import type { UnifiedMatch } from '../types/backend';
+import type { UnifiedMatch } from '@shared/types';
 import { TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { useState, useRef } from 'react';
 
@@ -360,21 +360,84 @@ export function MatchCard({ match }: MatchCardProps) {
           </div>
         )}
 
-        {/* Polymarket 价格 */}
+        {/* Polymarket 价格 - Bid/Ask 显示 */}
         <div className="mb-3">
           {dataCompleteness.hasPolyData ? (
-            <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-lg p-2.5 border border-purple-500/20">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-semibold text-purple-300">Polymarket</span>
+            <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-lg p-3 border border-purple-500/20">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-purple-300">Polymarket 交易价格</span>
+                <span className="text-xs text-gray-400">Bid / Ask</span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="text-center">
-                  <div className="text-xs text-gray-400 mb-0.5">{homeTeam.name.split(' ').pop()}</div>
-                  <div className="text-lg font-black text-white">{formatPrice(poly.homePrice)}</div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                {/* 主队价格 */}
+                <div className="space-y-1">
+                  <div className="text-xs text-gray-400 text-center font-medium">
+                    {homeTeam.name.split(' ').pop()}
+                  </div>
+                  <div className="bg-black/20 rounded-lg p-2 border border-white/10">
+                    <div className="flex justify-between items-center text-xs mb-1">
+                      <span className="text-green-400 font-medium">买入</span>
+                      <span className="text-red-400 font-medium">卖出</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-green-300 font-bold">
+                        {poly.homeBestAsk ? formatPrice(poly.homeBestAsk) : '--'}
+                      </span>
+                      <span className="text-red-300 font-bold">
+                        {poly.homeBestBid ? formatPrice(poly.homeBestBid) : '--'}
+                      </span>
+                    </div>
+                    <div className="text-center mt-1 pt-1 border-t border-white/10">
+                      <span className="text-xs text-gray-400">Mid: </span>
+                      <span className="text-xs text-white font-medium">{formatPrice(poly.homePrice)}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <div className="text-xs text-gray-400 mb-0.5">{awayTeam.name.split(' ').pop()}</div>
-                  <div className="text-lg font-black text-white">{formatPrice(poly.awayPrice)}</div>
+
+                {/* 客队价格 */}
+                <div className="space-y-1">
+                  <div className="text-xs text-gray-400 text-center font-medium">
+                    {awayTeam.name.split(' ').pop()}
+                  </div>
+                  <div className="bg-black/20 rounded-lg p-2 border border-white/10">
+                    <div className="flex justify-between items-center text-xs mb-1">
+                      <span className="text-green-400 font-medium">买入</span>
+                      <span className="text-red-400 font-medium">卖出</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-green-300 font-bold">
+                        {poly.awayBestAsk ? formatPrice(poly.awayBestAsk) : '--'}
+                      </span>
+                      <span className="text-red-300 font-bold">
+                        {poly.awayBestBid ? formatPrice(poly.awayBestBid) : '--'}
+                      </span>
+                    </div>
+                    <div className="text-center mt-1 pt-1 border-t border-white/10">
+                      <span className="text-xs text-gray-400">Mid: </span>
+                      <span className="text-xs text-white font-medium">{formatPrice(poly.awayPrice)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 价差信息 */}
+              <div className="mt-2 pt-2 border-t border-white/10">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-400">主队价差:</span>
+                  <span className="text-yellow-300 font-medium">
+                    {poly.homeBestAsk && poly.homeBestBid 
+                      ? `${((poly.homeBestAsk - poly.homeBestBid) * 100).toFixed(1)}¢`
+                      : '--'
+                    }
+                  </span>
+                  <span className="text-gray-400">客队价差:</span>
+                  <span className="text-yellow-300 font-medium">
+                    {poly.awayBestAsk && poly.awayBestBid 
+                      ? `${((poly.awayBestAsk - poly.awayBestBid) * 100).toFixed(1)}¢`
+                      : '--'
+                    }
+                  </span>
                 </div>
               </div>
             </div>

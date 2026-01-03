@@ -4,7 +4,7 @@ import {
   ArbitrageSignal,
   SignalType,
   MatchStatus,
-} from '../types';
+} from '../../../shared/types/index';
 
 /**
  * 套利计算引擎 - 新机制
@@ -32,15 +32,20 @@ class ArbitrageEngine {
     // 注意：移除虎扑数据源后，无法通过 quarter 判断比赛阶段
     // 暂时禁用此逻辑，直到找到替代数据源
     if (match.status === MatchStatus.LIVE) {
-      logger.info(`⚠️ [套利引擎] 虎扑数据已移除，无法判断比赛季度 ${match.homeTeam.name} vs ${match.awayTeam.name}`);
       // TODO: 需要替代方案来判断比赛阶段
       return signals;
     }
 
     // 检查数据完整性
-    if (!match.dataCompleteness.hasPolyData || !match.dataCompleteness.hasESPNData) {
-      logger.debug(`Insufficient data for match ${match.id}`);
+    if (!match.dataCompleteness.hasPolyData) {
+      logger.debug(`No Polymarket data for match ${match.id}`);
       return signals;
+    }
+
+    // 临时：即使没有 ESPN 数据也尝试生成信号（用于测试 Paper Trading）
+    if (!match.dataCompleteness.hasESPNData) {
+      logger.warn(`⚠️ 缺少 ESPN 数据，使用默认胜率进行 Paper Trading 测试: ${match.homeTeam.name} vs ${match.awayTeam.name}`);
+      // 继续执行，使用默认胜率
     }
 
     // 新策略：EV+ 决策模型
@@ -69,10 +74,32 @@ class ArbitrageEngine {
   private calculateEVPlusSignal(match: UnifiedMatch, side: 'home' | 'away'): ArbitrageSignal | null {
     const isHome = side === 'home';
     const teamName = isHome ? match.homeTeam.name : match.awayTeam.name;
+    
     // 获取ESPN胜率（上帝视角）
-    const espnProb = match.status === MatchStatus.PRE 
-      ? (isHome ? match.espn.pregameHomeWinProb : match.espn.pregameAwayWinProb)
-      : (isHome ? match.espn.homeWinProb : match.espn.awayWinProb);
+    let espnProb = 0;
+    if (match.dataCompleteness.hasESPNData && match.espn) {
+      espnProb = match.status === MatchStatus.PRE 
+        ? (isHome ? match.espn.pregameHomeWinProb : match.espn.pregameAwayWinProb)
+        : (isHome ? match.espn.homeWinProb : match.espn.awayWinProb);
+    } else {
+      // 临时：使用默认胜率进行测试（基于比分差异）
+      const scoreDiff = isHome 
+        ? match.homeTeam.score - match.awayTeam.score
+        : match.awayTeam.score - match.homeTeam.score;
+      
+      // 简单的胜率估算：基于比分差异
+      if (scoreDiff >= 10) {
+        espnProb = 0.75; // 领先10分以上，75%胜率
+      } else if (scoreDiff >= 5) {
+        espnProb = 0.65; // 领先5-9分，65%胜率
+      } else if (scoreDiff >= 0) {
+        espnProb = 0.55; // 领先或平局，55%胜率
+      } else {
+        espnProb = 0.45; // 落后，45%胜率
+      }
+      
+      logger.debug(`📊 使用默认胜率: ${teamName} ${(espnProb * 100).toFixed(1)}% (比分差: ${scoreDiff})`);
+    }
     
     // 获取Polymarket bestAsk（买入成本）
     const polyBestAsk = isHome ? match.poly.homeBestAsk : match.poly.awayBestAsk;
@@ -90,6 +117,7 @@ class ArbitrageEngine {
 
     // 铁律：利润空间 > 10% 才出手（市场犯错了）
     if (profitMargin < 0.10) {
+      logger.debug(`❌ 利润空间不足: ${teamName} ESPN${(espnProb * 100).toFixed(1)}% vs Ask${(buyPrice * 100).toFixed(1)}% = ${(profitMargin * 100).toFixed(1)}% < 10%`);
       return null;
     }
 
@@ -117,7 +145,7 @@ class ArbitrageEngine {
         polyPrice: buyPrice, // 使用 bestAsk 作为价格
         priceDiff: profitMargin,
         scoreDiff,
-        timeRemaining: 'N/A', // 虎扑数据已移除
+        timeRemaining: 'N/A', // TODO: 需要从 ESPN 获取比赛时间信息
       },
     };
   }

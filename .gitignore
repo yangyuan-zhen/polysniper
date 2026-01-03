@@ -55,3 +55,10 @@ ecosystem.config.js.backup
 
 # Redis
 dump.rdb
+
+# SQLite Database Files (NEVER commit database files!)
+*.sqlite
+*.sqlite3
+*.db
+**/data/
+server/data/

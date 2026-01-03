@@ -2,7 +2,7 @@ import axios from 'axios';
 import { logger } from '../utils/logger';
 import { config } from '../config';
 import { cache } from '../utils/cache';
-import { ESPNData, CacheKey } from '../types';
+import { ESPNData, CacheKey } from '../../../shared/types/index';
 
 class ESPNService {
   private baseUrl: string;

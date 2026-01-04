@@ -341,7 +341,7 @@ class DataAggregator {
         
         // 🎯 订阅 WebSocket 实时价格更新
         if (config.polymarket.wsEnabled && polyData.marketId) {
-          this.subscribeToMarketPrice(matchId, polyData.marketId, polyData.homeTokenId, polyData.awayTokenId);
+          this.subscribeToMarketPrice(match);
         }
       }
     } else if (polyResult.status === 'rejected') {
@@ -606,12 +606,12 @@ class DataAggregator {
   /**
    * 订阅 Polymarket WebSocket 实时价格
    */
-  private subscribeToMarketPrice(
-    matchId: string,
-    marketId: string,
-    homeTokenId: string,
-    awayTokenId: string
-  ): void {
+  private subscribeToMarketPrice(match: UnifiedMatch): void {
+    const matchId = match.id;
+    const marketId = match.poly.marketId;
+    const homeTokenId = match.poly.homeTokenId;
+    const awayTokenId = match.poly.awayTokenId;
+
     // 避免重复订阅
     if (this.subscribedMarkets.has(marketId)) {
       logger.debug(`跳过重复订阅: ${marketId.slice(0, 8)}...`);
@@ -620,9 +620,8 @@ class DataAggregator {
 
     this.subscribedMarkets.add(marketId);
     
-    const match = this.matches.get(matchId);
-    const homeTeam = match?.homeTeam?.name || 'Unknown';
-    const awayTeam = match?.awayTeam?.name || 'Unknown';
+    const homeTeam = match.homeTeam.name;
+    const awayTeam = match.awayTeam.name;
     
     logger.info(`🔔 订阅市场价格 [${homeTeam} vs ${awayTeam}]`);
     logger.info(`   Market ID: ${marketId.slice(0, 8)}...`);

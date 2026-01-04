@@ -21,11 +21,13 @@ class PolymarketService {
   private pendingSubscriptions: Set<string> = new Set(); // 待订阅的 asset_id
   private subscriptionTimer: NodeJS.Timeout | null = null; // 批量订阅定时器
   private pingInterval: NodeJS.Timeout | null = null; // 心跳定时器
-  private priceCache: Map<string, number> = new Map(); // 价格缓存
+  private priceCache: Map<string, { price: number; bestBid: number | null; bestAsk: number | null }> = new Map(); // 价格缓存
   // 注意：2025年5月28日更新 - 100 token 订阅限制已被移除
   private lastSubscribeTime = 0; // 上次订阅时间
   private lastMessageTime = 0; // 上次收到消息的时间
+  private lastWsTime: Map<string, number> = new Map(); // 每个 asset 最后一次收到 WS 更新的时间
   private connectionCheckInterval: NodeJS.Timeout | null = null; // 连接检查定时器
+  private pollingInterval: NodeJS.Timeout | null = null; // REST API 轮询定时器
 
   constructor() {
     this.gammaApiUrl = config.polymarket.gammaApiUrl;
@@ -86,6 +88,9 @@ class PolymarketService {
         
         // 启动连接健康检查（每30秒检查一次）
         this.startConnectionCheck();
+        
+        // 启动 REST API 轮询（每1秒一次，作为 WebSocket 的兜底）
+        this.startPolling();
         
         // ⚠️ 不发送初始连接消息
         // Polymarket WebSocket 不期望 "hello" 消息，会返回 INVALID OPERATION
@@ -178,7 +183,9 @@ class PolymarketService {
       this.ws.on('close', (code, reason) => {
         logger.warn(`⚠️ WebSocket 连接已关闭 - Code: ${code}, Reason: ${reason || '无'}`);
         this.stopHeartbeat();
+        this.stopHeartbeat();
         this.stopConnectionCheck();
+        this.stopPolling();
         this.reconnect();
       });
     } catch (error) {
@@ -256,6 +263,103 @@ class PolymarketService {
       clearInterval(this.connectionCheckInterval);
       this.connectionCheckInterval = null;
       logger.debug('连接健康检查已停止');
+    }
+  }
+
+  /**
+   * 启动 REST API 轮询（兜底机制）
+   */
+  private startPolling(): void {
+    this.stopPolling();
+    
+    logger.info('🔄 启动 REST API 轮询（每1秒一次）');
+    
+    this.pollingInterval = setInterval(async () => {
+      if (this.subscribedAssets.size === 0) return;
+      
+      const now = Date.now();
+      
+      // 遍历所有已订阅的资产，获取最新订单簿
+      for (const assetId of this.subscribedAssets) {
+        // 优化：如果 WebSocket 最近有更新（2秒内）且缓存中有完整的买卖价，则跳过 REST API 轮询
+        const lastUpdate = this.lastWsTime.get(assetId) || 0;
+        const cached = this.priceCache.get(assetId);
+        const hasFullData = cached && cached.bestBid !== null && cached.bestAsk !== null;
+        
+        if (now - lastUpdate < 2000 && hasFullData) {
+          // WebSocket 活跃且数据完整，跳过轮询
+          continue;
+        }
+        
+        try {
+          const book = await this.getOrderBook(assetId);
+          if (book) {
+            // 更新价格缓存并推送
+            // 注意：这里我们使用缓存中的 midPrice，或者如果 book 中有 bid/ask 则计算新的 midPrice
+            const cached = this.priceCache.get(assetId);
+            let midPrice = cached?.price || 0;
+            
+            if (book.bestBid && book.bestAsk) {
+              midPrice = (book.bestBid + book.bestAsk) / 2;
+            }
+            
+            this.updatePrice(assetId, {
+              price: midPrice,
+              bestBid: book.bestBid,
+              bestAsk: book.bestAsk
+            });
+          }
+        } catch (error) {
+          // 忽略单个查询错误，避免日志刷屏
+        }
+      }
+    }, 1000);
+  }
+
+  /**
+   * 停止 REST API 轮询
+   */
+  private stopPolling(): void {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+      logger.debug('REST API 轮询已停止');
+    }
+  }
+
+  /**
+   * 获取单个 Token 的订单簿（REST API）
+   */
+  private async getOrderBook(tokenId: string): Promise<{ bestBid: number | null; bestAsk: number | null } | null> {
+    try {
+      // 配置代理（如果需要）
+      const axiosConfig: any = {
+        params: { token_id: tokenId },
+        timeout: 2000, // 短超时
+      };
+      
+      // 获取代理配置
+      const proxy = config.polymarket.wsProxy;
+      if (proxy && proxy !== 'none') {
+        const { HttpsProxyAgent } = await import('https-proxy-agent');
+        axiosConfig.httpsAgent = new HttpsProxyAgent(proxy);
+        axiosConfig.httpAgent = new HttpsProxyAgent(proxy);
+      }
+      
+      const response = await axios.get(`${this.clobApiUrl}/book`, axiosConfig);
+      
+      if (response.data) {
+        const bids = response.data.bids || [];
+        const asks = response.data.asks || [];
+        
+        return {
+          bestBid: bids.length > 0 ? parseFloat(bids[0].price) : null,
+          bestAsk: asks.length > 0 ? parseFloat(asks[0].price) : null
+        };
+      }
+      return null;
+    } catch (error) {
+      return null;
     }
   }
 
@@ -360,6 +464,7 @@ class PolymarketService {
       
       if (midPrice) {
         logger.info(`📖 订单簿 [${asset_id.slice(0, 8)}...]: Mid=$${midPrice.toFixed(4)}, Bid=$${bestBid?.toFixed(4) || 'N/A'}, Ask=$${bestAsk?.toFixed(4) || 'N/A'}`);
+        this.lastWsTime.set(asset_id, Date.now()); // 记录 WS 更新时间
         this.updatePrice(asset_id, { price: midPrice, bestBid, bestAsk });
       }
     } 
@@ -374,6 +479,7 @@ class PolymarketService {
         
         if (asset_id && midPrice) {
           logger.info(`📈 价格更新 [${asset_id.slice(0, 8)}...]: Mid=$${midPrice.toFixed(4)}, Bid=$${bestBid?.toFixed(4) || 'N/A'}, Ask=$${bestAsk?.toFixed(4) || 'N/A'} (${change.side})`);
+          this.lastWsTime.set(asset_id, Date.now()); // 记录 WS 更新时间
           this.updatePrice(asset_id, { price: midPrice, bestBid, bestAsk });
         }
       });
@@ -685,8 +791,18 @@ class PolymarketService {
    * 更新价格并触发订阅者回调（WebSocket 实时推送）
    */
   private updatePrice(assetId: string, priceData: { price: number; bestBid: number | null; bestAsk: number | null }): void {
-    // 更新价格缓存（使用中间价）
-    this.priceCache.set(assetId, priceData.price);
+    // 获取现有缓存
+    const cached = this.priceCache.get(assetId);
+    
+    // 合并数据：如果新数据的 bid/ask 为空，则保留旧数据
+    const mergedData = {
+      price: priceData.price,
+      bestBid: priceData.bestBid !== null ? priceData.bestBid : (cached?.bestBid || null),
+      bestAsk: priceData.bestAsk !== null ? priceData.bestAsk : (cached?.bestAsk || null)
+    };
+
+    // 更新价格缓存
+    this.priceCache.set(assetId, mergedData);
 
     // 触发所有订阅者的回调
     const callbacks = this.subscribers.get(assetId);
@@ -694,10 +810,10 @@ class PolymarketService {
       callbacks.forEach(callback => {
         try {
           callback({ 
-            price: priceData.price, 
-            midPrice: priceData.price, 
-            bestBid: priceData.bestBid, 
-            bestAsk: priceData.bestAsk, 
+            price: mergedData.price, 
+            midPrice: mergedData.price, 
+            bestBid: mergedData.bestBid, 
+            bestAsk: mergedData.bestAsk, 
             timestamp: Date.now() 
           });
         } catch (error) {
@@ -954,12 +1070,50 @@ class PolymarketService {
       logger.info(`   原始 outcomePrices: ${JSON.stringify(outcomePrices)}`);
       logger.info(`   解析后: ${outcomes[homeIndex]}=$${homePrice.toFixed(4)}, ${outcomes[awayIndex]}=$${awayPrice.toFixed(4)}`);
 
+      // 获取初始订单簿数据（填充缓存）
+      // 这一步至关重要，因为 WebSocket 初始可能没有推送 bid/ask
+      try {
+        logger.info(`[Layer 3] 正在获取初始订单簿数据: ${homeTeam} vs ${awayTeam}`);
+        
+        const [homeBook, awayBook] = await Promise.all([
+          this.getOrderBook(homeTokenId),
+          this.getOrderBook(awayTokenId)
+        ]);
+        
+        if (homeBook) {
+          logger.debug(`  主队初始价格: Bid=${homeBook.bestBid}, Ask=${homeBook.bestAsk}`);
+          // 立即更新缓存
+          this.updatePrice(homeTokenId, {
+            price: homePrice, // 保持原有 midPrice
+            bestBid: homeBook.bestBid,
+            bestAsk: homeBook.bestAsk
+          });
+        }
+        
+        if (awayBook) {
+          logger.debug(`  客队初始价格: Bid=${awayBook.bestBid}, Ask=${awayBook.bestAsk}`);
+          // 立即更新缓存
+          this.updatePrice(awayTokenId, {
+            price: awayPrice, // 保持原有 midPrice
+            bestBid: awayBook.bestBid,
+            bestAsk: awayBook.bestAsk
+          });
+        }
+      } catch (error) {
+        logger.warn('获取初始订单簿失败，将依赖 WebSocket 更新:', error);
+      }
+
       return {
         marketId: market.conditionId || market.condition_id || market.id || '',
         homeTokenId,
         awayTokenId,
         homePrice,
         awayPrice,
+        // 从缓存中读取最新的 bid/ask (刚刚通过 updatePrice 更新过)
+        homeBestBid: this.priceCache.get(homeTokenId)?.bestBid || undefined,
+        homeBestAsk: this.priceCache.get(homeTokenId)?.bestAsk || undefined,
+        awayBestBid: this.priceCache.get(awayTokenId)?.bestBid || undefined,
+        awayBestAsk: this.priceCache.get(awayTokenId)?.bestAsk || undefined,
         homeVolume: parseFloat(market.volumeNum || market.volume || '0'),
         awayVolume: 0,
         liquidity: parseFloat(market.liquidityNum || market.liquidity || event.liquidity || '0'),
@@ -979,6 +1133,7 @@ class PolymarketService {
       // 停止心跳定时器
       this.stopHeartbeat();
       this.stopConnectionCheck();
+      this.stopPolling();
       
       // 安全关闭 WebSocket
       if (this.ws) {

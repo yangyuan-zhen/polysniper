@@ -76,15 +76,15 @@ class DataAggregator {
         // 2. 静态数据（比赛列表、Token ID、Market ID）：长效缓存
         // 3. ESPN：每3秒请求一次（节流）
         // 4. Polymarket WS：被动接收，实时处理
-        const interval = 3000; // 3秒节流
+        const interval = 1000; // 1秒节流
         
         this.updateInterval = setTimeout(update, interval);
         
         // 显示当前状态
         if (this.hasLiveMatches) {
-          logger.debug(`🔴 进行中比赛，ESPN节流: 3秒`);
+          logger.debug(`🔴 进行中比赛，ESPN节流: 1秒`);
         } else {
-          logger.debug(`⚪ 等待比赛开始，ESPN节流: 3秒`);
+          logger.debug(`⚪ 等待比赛开始，ESPN节流: 1秒`);
         }
       } catch (err) {
         logger.error('更新比赛数据失败:', err);

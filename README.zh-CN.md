@@ -215,12 +215,9 @@ yhrsc30@gmail.com
 
 ## 📚 文档索引
 
-- 📖 **[DOCS.md](./DOCS.md)** - 完整文档总览 ⭐ **推荐**
-- 🏗️ **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - 系统架构设计
-- 💰 **[docs/PRICE_GUIDE.md](./docs/PRICE_GUIDE.md)** - Bid/Ask/Mid 价格详解
-- 🔧 **[server/README.md](./server/README.md)** - 后端服务文档
-- 🎨 **[client/README.md](./client/README.md)** - 前端应用文档
-- 🎯 **[client/SIGNALS_GUIDE.md](./client/SIGNALS_GUIDE.md)** - 套利信号详解
+- 📖 **[README](./README.md)** - 英文主文档
+- 📖 **[中文文档](./README.zh-CN.md)** - 中文主文档
+- 📡 **[API 接口文档](./server/API.zh-CN.md)** - REST API & WebSocket 接口说明
 
 ## 💼 Paper Trading 快速入门
 

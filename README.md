@@ -1,136 +1,140 @@
 # 🎯 PolySniper
 
-**NBA 赛事套利监控平台** - 实时监控 ESPN 赔率与 Polymarket 预测市场，自动发现套利机会
+**NBA Sports Arbitrage Monitoring Platform** - Real-time monitoring of ESPN odds and Polymarket prediction markets to automatically discover arbitrage opportunities
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb)](https://reactjs.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
 
-> 📖 **详细文档**: [系统架构](./docs/ARCHITECTURE.md) | [价格指南](./docs/PRICE_GUIDE.md)
+> 🌏 **[中文文档](./README.zh-CN.md)** | **English**
 
-## 📁 项目结构
+> 📖 **Detailed Documentation**: [System Architecture](./docs/ARCHITECTURE.md) | [Price Guide](./docs/PRICE_GUIDE.md)
+
+## 📁 Project Structure
 
 ```
 polysniper/
-├── client/          # 前端应用 (React + Vite + TailwindCSS)
-├── server/          # 后端服务 (Node.js + Express + WebSocket)
-├── package.json     # 根配置文件
-└── README.md        # 项目说明
+├── client/          # Frontend app (React + Vite + TailwindCSS)
+├── server/          # Backend service (Node.js + Express + WebSocket)
+├── shared/          # Shared types and utilities
+├── docs/            # Documentation
+├── package.json     # Root configuration
+└── README.md        # Project documentation
 ```
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 安装依赖
+### Install Dependencies
 
 ```bash
-# 安装所有依赖（根目录 + 前端 + 后端）
+# Install all dependencies (root + frontend + backend)
 npm run install:all
 ```
 
-### 开发模式
+### Development Mode
 
 ```bash
-# 同时启动前后端开发服务器
+# Start both frontend and backend dev servers
 npm run dev
 
-# 或分别启动
-npm run dev:server  # 后端: http://localhost:3000
-npm run dev:client  # 前端: http://localhost:5173
+# Or start separately
+npm run dev:server  # Backend: http://localhost:3000
+npm run dev:client  # Frontend: http://localhost:5173
 ```
 
-### 生产构建
+### Production Build
 
 ```bash
-# 构建前后端
+# Build frontend and backend
 npm run build
 
-# 启动生产服务器
+# Start production server
 npm start
 ```
 
-## 🔧 技术栈
+## 🔧 Tech Stack
 
-### 前端
-- **框架**: React 19 + TypeScript
-- **构建工具**: Vite 7
-- **样式**: TailwindCSS 4
-- **图表**: Recharts
-- **图标**: Lucide React
+### Frontend
+- **Framework**: React 19 + TypeScript
+- **Build Tool**: Vite 7
+- **Styling**: TailwindCSS 4
+- **Charts**: Recharts
+- **Icons**: Lucide React
 - **WebSocket**: Socket.IO Client
 
-### 后端
-- **运行时**: Node.js + TypeScript
-- **框架**: Express
+### Backend
+- **Runtime**: Node.js + TypeScript
+- **Framework**: Express
 - **WebSocket**: Socket.IO
-- **缓存**: Redis (可选)
-- **日志**: Winston
-- **数据源**: 
-  - ESPN API (比赛赛程、实时比分、胜率预测、伤病信息)
-  - Polymarket API (市场价格数据)
+- **Cache**: Redis (optional)
+- **Logging**: Winston
+- **Data Sources**: 
+  - ESPN API (game schedules, live scores, win probabilities, injury reports)
+  - Polymarket API (market price data)
 
-## 📡 API 端点
+## 📡 API Endpoints
 
 ### REST API
-- `GET /health` - 健康检查
-- `GET /api/matches` - 获取所有比赛
-- `GET /api/matches/:id` - 获取单场比赛
-- `GET /api/signals` - 获取套利信号
-- `GET /api/stats` - 获取统计信息
+- `GET /health` - Health check
+- `GET /api/matches` - Get all matches
+- `GET /api/matches/:id` - Get single match
+- `GET /api/signals` - Get arbitrage signals
+- `GET /api/stats` - Get statistics
 
 ### WebSocket
-- **连接**: `ws://localhost:3000`
-- **事件**:
-  - `subscribe` - 订阅比赛更新
-  - `unsubscribe` - 取消订阅
-  - `matchesUpdate` - 接收比赛更新
-  - `signalAlert` - 接收套利信号
+- **Connection**: `ws://localhost:3000`
+- **Events**:
+  - `subscribe` - Subscribe to match updates
+  - `unsubscribe` - Unsubscribe from matches
+  - `matchesUpdate` - Receive match updates
+  - `signalAlert` - Receive arbitrage signals
 
-详细 API 文档：[server/API.md](./server/API.md)
+📖 Detailed API Documentation: [server/API.md](./server/API.md)
 
-## ✨ 核心功能
+## ✨ Core Features
 
-- ⚡ **毫秒级实时更新** - WebSocket 推送，价格延迟 < 1秒
-- 🔄 **多源数据整合** - ESPN 赔率 + Polymarket 预测市场
-- 💰 **自动套利检测** - EV+ 模型，利润空间 > 10% 触发
-- 🤖 **Paper Trading** - Q1-Q3 价值回归策略，混合离场机制
-- 💸 **真实价格模拟** - 买入用 Ask，卖出用 Bid，包含滑点
-- 🎯 **智能离场** - 获利了结(25%) + 逻辑证伪 + 硬止损(50%)
-- 📊 **数据可视化** - ESPN 风格胜率曲线，交互式悬停
-- 🎯 **智能匹配** - 三层漏斗精准匹配球队和市场
-- ⏰ **时间控制** - 只做 Q1-Q3，避免第四节赌博逻辑
+- ⚡ **Millisecond Real-time Updates** - WebSocket push, price latency < 1s
+- 🔄 **Multi-source Data Integration** - ESPN odds + Polymarket prediction markets
+- 💰 **Automatic Arbitrage Detection** - EV+ model, triggers at >10% profit margin
+- 🤖 **Paper Trading** - Q1-Q3 value reversion strategy with hybrid exit mechanism
+- 💸 **Real Price Simulation** - Use Ask for buying, Bid for selling, includes slippage
+- 🎯 **Smart Exit Strategy** - Take profit (25%) + logic invalidation + hard stop loss (50%)
+- 📊 **Data Visualization** - ESPN-style win probability curves with interactive hover
+- 🎯 **Intelligent Matching** - Three-layer funnel for precise team and market matching
+- ⏰ **Time Control** - Only trade Q1-Q3, avoid Q4 gambling logic
 
-## 📊 数据更新策略
+## 📊 Data Update Strategy
 
-### 实时数据（不缓存）
-- ✅ **比分、时间、ESPN 胜率、Polymarket 价格**
-- ESPN: 每 **3秒** 请求一次（节流）
-- Polymarket: **WebSocket 实时推送**（被动接收）
-- 前端: 每 **500ms** 推送一次
+### Real-time Data (No Cache)
+- ✅ **Scores, Time, ESPN Win Prob, Polymarket Prices**
+- ESPN: Request every **3 seconds** (throttled)
+- Polymarket: **WebSocket real-time push** (passive receive)
+- Frontend: Push every **500ms**
 
-### 静态数据（长效缓存 24小时）
-- ✅ **今日比赛列表、Token ID、Market ID、Team Mapping**
-- 这些数据在比赛期间不会改变
-- 减少 API 请求，提升性能
+### Static Data (24-hour Long Cache)
+- ✅ **Today's Match List, Token IDs, Market IDs, Team Mappings**
+- This data doesn't change during games
+- Reduces API requests, improves performance
 
-### 价格体系
-| 价格类型 | 用途 | 来源 |
+### Price System
+| Price Type | Usage | Source |
 |---------|------|------|
-| **Ask（卖价）** | 买入时支付 | `asks[0].price` |
-| **Bid（买价）** | 卖出时收到 | `bids[0].price` |
-| **Mid（中间价）** | 显示、估值 | `(Bid + Ask) / 2` |
+| **Ask (Sell Price)** | Pay when buying | `asks[0].price` |
+| **Bid (Buy Price)** | Receive when selling | `bids[0].price` |
+| **Mid (Mid Price)** | Display, valuation | `(Bid + Ask) / 2` |
 
-> 💡 详见 [价格使用指南](./docs/PRICE_GUIDE.md)
+> 💡 See [Price Usage Guide](./docs/PRICE_GUIDE.md) for details
 
-## 🔐 环境配置
+## 🔐 Environment Configuration
 
-### 后端 (.env)
+### Backend (.env)
 
 ```bash
-# 服务配置
+# Service Configuration
 PORT=3000
 NODE_ENV=development
 
-# Polymarket WebSocket（⚠️ 国内需要代理！）
+# Polymarket WebSocket (⚠️ Requires proxy in China!)
 POLYMARKET_WS_ENABLED=true
 POLYMARKET_WS_URL=wss://ws-subscriptions-clob.polymarket.com/ws/market
 POLYMARKET_WS_PROXY=http://127.0.0.1:7890
@@ -138,108 +142,118 @@ POLYMARKET_WS_PROXY=http://127.0.0.1:7890
 # CORS
 CORS_ORIGIN=*
 
-# Redis (可选)
+# Redis (optional)
 REDIS_ENABLED=false
 
-# 日志级别（debug 可查看心跳详情）
+# Log level (debug to see heartbeat details)
 LOG_LEVEL=info
 ```
 
-> ⚠️ **重要**: 
-> - Polymarket WebSocket 需要 HTTP 代理访问（国内网络）
-> - 心跳机制使用 WebSocket 协议层 Ping/Pong（15秒间隔）
-> - 详细配置请参考 [server/docs/WEBSOCKET.md](./server/docs/WEBSOCKET.md)
+> ⚠️ **Important**: 
+> - Polymarket WebSocket requires HTTP proxy access (for networks in China)
+> - Heartbeat mechanism uses WebSocket protocol-level Ping/Pong (15s interval)
+> - Detailed configuration: [server/docs/WEBSOCKET.md](./server/docs/WEBSOCKET.md)
 
-## 📝 开发指南
+## 📝 Development Guide
 
-### 前端开发
+### Frontend Development
 ```bash
 cd client
-npm run dev      # 启动开发服务器
-npm run build    # 生产构建
-npm run lint     # 代码检查
+npm run dev      # Start dev server
+npm run build    # Production build
+npm run lint     # Code linting
 ```
 
-### 后端开发
+### Backend Development
 ```bash
 cd server
-npm run dev      # 启动开发服务器
-npm run build    # TypeScript 编译
-npm run test     # 运行测试
+npm run dev      # Start dev server
+npm run build    # TypeScript compilation
+npm run test     # Run tests
 ```
 
-## 📦 部署
+## 📦 Deployment
 
-### 使用 PM2 (推荐)
+### Using PM2 (Recommended)
 ```bash
 cd server
 npm run start:pm2
 ```
 
-### Docker (待实现)
+### Docker (To Be Implemented)
 ```bash
 docker-compose up -d
 ```
 
-## ⚠️ 重要注意事项
+## ⚠️ Important Notes
 
-1. **代理必需** 🌐
-   - Polymarket API 需要代理访问
-   - 配置 `POLYMARKET_WS_PROXY` 环境变量
+1. **Proxy Required** 🌐
+   - Polymarket API requires proxy access
+   - Configure `POLYMARKET_WS_PROXY` environment variable
 
-2. **WebSocket 订阅限制** 📡
-   - 单次订阅最多 10 个 tokens
-   - 批次间隔 100ms
-   - 避免 `INVALID OPERATION` 错误
+2. **WebSocket Subscription Limits** 📡
+   - Maximum 10 tokens per subscription
+   - 100ms interval between batches
+   - Avoid `INVALID OPERATION` errors
 
-3. **队名特殊处理** 🏀
-   - Thunder 队名包含 "under"
-   - 需要特殊逻辑避免误排除
+3. **Special Team Name Handling** 🏀
+   - Thunder team name contains "under"
+   - Requires special logic to avoid false exclusion
 
-4. **数据延迟** ⏱️
-   - Polymarket WebSocket: < 1秒
-   - ESPN 轮询: 2-30秒（动态调整）
+4. **Data Latency** ⏱️
+   - Polymarket WebSocket: < 1s
+   - ESPN polling: 2-30s (dynamically adjusted)
 
-## 🤝 贡献
+## 💼 Paper Trading Quick Start
 
-欢迎提交 Issue 和 Pull Request！
+```typescript
+// Runs automatically, no configuration needed
+Initial Capital: $1000 USDC
+Position Management: 10% capital per trade
+Trading Logic: 
+  - Find signal → Auto buy (Ask price)
+  - Real-time P&L → Market valuation (Mid price)
+  - Game ends → Auto close (Bid price)
 
-## 📄 许可证
+// View trading records
+Listen to WebSocket event: paperTradingUpdate
+```
+
+**Example Logs:**
+```
+✅ [Paper Trading] Buy LA Clippers x11.63 @$0.8600 (Ask price, cost: $10.00)
+   Order ID: ORD000001, Confidence: 95.0%, Balance: $990.00
+
+🔒 [Paper Trading] Close LA Clippers @$0.9500
+   P&L: $10.47 (+121.88%), Balance: $1010.47
+```
+
+## 📚 Documentation Index
+
+### Core Documentation
+- 📖 **[README](./README.md)** - Project overview (English)
+- 📖 **[中文文档](./README.zh-CN.md)** - Project overview (Chinese)
+- 🏗️ **[System Architecture](./docs/ARCHITECTURE.md)** - Architecture design
+- 💰 **[Price Guide](./docs/PRICE_GUIDE.md)** - Bid/Ask/Mid price explanation
+- 🔌 **[WebSocket Limits](./docs/WEBSOCKET_LIMITS.md)** - WebSocket best practices
+
+### Frontend Documentation
+- 🎨 **[Client README](./client/README.md)** - Frontend application
+- 🎯 **[Signals Guide](./client/SIGNALS_GUIDE.md)** - Arbitrage signals explained
+
+### Backend Documentation
+- 🔧 **[Server README](./server/README.md)** - Backend service
+- 📡 **[API Documentation](./server/API.md)** - REST API & WebSocket
+- 🏀 **[Team Mappings](./server/TEAM_MAPPINGS.md)** - NBA team mappings
+
+## 🤝 Contributing
+
+Issues and Pull Requests are welcome!
+
+## 📄 License
 
 ISC License
 
-## 📞 联系方式
+## 📞 Contact
+
 yhrsc30@gmail.com
-
-## 📚 文档索引
-
-- 📖 **[DOCS.md](./DOCS.md)** - 完整文档总览 ⭐ **推荐**
-- 🏗️ **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - 系统架构设计
-- 💰 **[docs/PRICE_GUIDE.md](./docs/PRICE_GUIDE.md)** - Bid/Ask/Mid 价格详解
-- 🔧 **[server/README.md](./server/README.md)** - 后端服务文档
-- 🎨 **[client/README.md](./client/README.md)** - 前端应用文档
-- 🎯 **[client/SIGNALS_GUIDE.md](./client/SIGNALS_GUIDE.md)** - 套利信号详解
-
-## 💼 Paper Trading 快速入门
-
-```typescript
-// 自动运行，无需配置
-初始资金: $1000 USDC
-仓位管理: 每次 10% 资金
-交易逻辑: 
-  - 发现信号 → 自动买入（Ask 价格）
-  - 实时盈亏 → 市值估值（Mid 价格）
-  - 比赛结束 → 自动平仓（Bid 价格）
-
-// 查看交易记录
-监听 WebSocket 事件: paperTradingUpdate
-```
-
-**示例日志：**
-```
-✅ [Paper Trading] 买入 LA Clippers x11.63 @$0.8600 (Ask价，成本: $10.00)
-   订单ID: ORD000001, 置信度: 95.0%, 余额: $990.00
-
-🔒 [Paper Trading] 平仓 LA Clippers @$0.9500
-   盈亏: $10.47 (+121.88%), 余额: $1010.47
-```

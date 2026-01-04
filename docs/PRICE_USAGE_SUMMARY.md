@@ -1,59 +1,61 @@
-# Polymarket 价格使用总结
+# Polymarket Price Usage Summary
 
-## 📋 价格类型
+> 🌏 **[中文文档](./PRICE_USAGE_SUMMARY.zh-CN.md)** | **English**
 
-| 价格类型 | 含义 | 用途 |
+## 📋 Price Types
+
+| Price Type | Meaning | Usage |
 |---------|------|------|
-| **bestAsk** | 最低卖价 | 买入成本（你支付的价格） |
-| **bestBid** | 最高买价 | 卖出收入（你收到的价格） |
-| **midPrice** | 中间价 `(bid + ask) / 2` | 显示参考，不用于交易决策 |
+| **bestAsk** | Lowest sell price | Buy cost (price you pay) |
+| **bestBid** | Highest buy price | Sell revenue (price you receive) |
+| **midPrice** | Mid price `(bid + ask) / 2` | Display reference, not for trading decisions |
 
 ---
 
-## ✅ 正确用法
+## ✅ Correct Usage
 
-### 1. 套利信号判断（买入决策）
+### 1. Arbitrage Signal Judgment (Buy Decision)
 
-**使用 `bestAsk`**（买入成本）
+**Use `bestAsk`** (buy cost)
 
 ```typescript
 // arbitrageEngine.ts
-const buyPrice = polyBestAsk || polyMidPrice; // 优先 bestAsk
+const buyPrice = polyBestAsk || polyMidPrice; // Prefer bestAsk
 const profitMargin = espnProb - buyPrice;
 
 if (profitMargin > 0.10) {
-  // 生成买入信号
+  // Generate buy signal
 }
 ```
 
-**原因**：
-- 我们要买入时，需要支付 `bestAsk` 价格
-- 套利利润 = `ESPN胜率 - bestAsk`（不是 midPrice）
-- 使用 midPrice 会**高估利润**，导致错误决策
+**Reason**:
+- When buying, we pay `bestAsk` price
+- Arbitrage profit = `ESPN Win Prob - bestAsk` (not midPrice)
+- Using midPrice **overestimates profit**, leading to wrong decisions
 
 ---
 
-### 2. 模拟交易买入（Paper Trading）
+### 2. Paper Trading Buy
 
-**使用 `bestAsk`**（买入成本）
+**Use `bestAsk`** (buy cost)
 
 ```typescript
 // paperTradingService.ts
-const price = homeBestAsk || homePrice; // 优先 bestAsk
+const price = homeBestAsk || homePrice; // Prefer bestAsk
 const cost = quantity * price;
 this.balance -= cost;
 ```
 
-**日志输出**：
+**Log output**:
 ```
-✅ [Paper Trading] 买入 Lakers x10.00 @$0.6500 (Ask价，成本: $6.50)
+✅ [Paper Trading] Buy Lakers x10.00 @$0.6500 (Ask price, cost: $6.50)
 ```
 
 ---
 
-### 3. 持仓价格更新（浮盈浮亏计算）
+### 3. Position Price Update (Unrealized P&L)
 
-**使用 `bestBid`**（卖出价）
+**Use `bestBid`** (sell price)
 
 ```typescript
 // dataAggregator.ts
@@ -61,195 +63,178 @@ paperTradingService.updatePositionPrice(
   matchId,
   homeTokenId,
   awayTokenId,
-  homeBestBid || homePrice, // 使用 bestBid（卖出价）
-  awayBestBid || awayPrice  // 使用 bestBid（卖出价）
+  homeBestBid || homePrice, // Use bestBid (sell price)
+  awayBestBid || awayPrice  // Use bestBid (sell price)
 );
 ```
 
-**原因**：
-- 持仓浮盈 = 如果现在卖出能收到多少钱
-- 卖出时我们收到的是 `bestBid` 价格
-- 浮盈 = `(bestBid - bestAsk) * quantity`
+**Reason**:
+- Unrealized P&L = how much $ if sold now
+- When selling, we receive `bestBid` price
+- Unrealized P&L = `(bestBid - bestAsk) * quantity`
 
 ---
 
-### 4. 平仓（比赛结束）
+### 4. Close Position (Match Ended)
 
-**使用 `bestBid`**（卖出价）
+**Use `bestBid`** (sell price)
 
 ```typescript
 // dataAggregator.ts
 paperTradingService.closePosition(
   matchId,
   homeTokenId,
-  homeBestBid || homePrice // 使用 bestBid（卖出价）
+  homeBestBid || homePrice // Use bestBid (sell price)
 );
 ```
 
-**实际利润计算**：
+**Actual profit calculation**:
 ```typescript
-const entryCost = quantity * bestAsk;  // 买入成本
-const exitRevenue = quantity * bestBid; // 卖出收入
-const profit = exitRevenue - entryCost; // 实际利润
+const entryCost = quantity * bestAsk;   // Buy cost
+const exitRevenue = quantity * bestBid; // Sell revenue
+const profit = exitRevenue - entryCost; // Actual profit
 ```
 
 ---
 
-## 📊 完整流程示例
+## 📊 Complete Flow Example
 
-### 场景：Lakers vs Celtics
+### Scenario: Lakers vs Celtics
 
-#### 1. WebSocket 价格更新
+#### 1. WebSocket Price Update
 ```json
 {
   "event_type": "price_change",
   "price_changes": [{
     "asset_id": "0x123...",
-    "best_bid": "0.64",  // ⭐ 卖出价
-    "best_ask": "0.66",  // ⭐ 买入价
-    "price": "0.65"      // Mid 价（参考）
+    "best_bid": "0.64",  // ⭐ Sell price
+    "best_ask": "0.66",  // ⭐ Buy price
+    "price": "0.65"      // Mid price (reference)
   }]
 }
 ```
 
-#### 2. 套利信号判断
+#### 2. Arbitrage Signal Judgment
 ```typescript
-ESPN Lakers 胜率: 75%
+ESPN Lakers Win Prob: 75%
 Polymarket bestAsk: 66%
 
-利润空间 = 75% - 66% = 9%
-❌ 不满足 10% 阈值，不生成信号
+Profit margin = 75% - 66% = 9%
+❌ Does not meet 10% threshold, no signal generated
 ```
 
-如果 bestAsk 降到 64%：
+If bestAsk drops to 64%:
 ```typescript
-利润空间 = 75% - 64% = 11%
-✅ 满足 10% 阈值，生成买入信号
+Profit margin = 75% - 64% = 11%
+✅ Meets 10% threshold, generate buy signal
 ```
 
-#### 3. 模拟买入（Paper Trading）
+#### 3. Paper Trading Buy
 ```typescript
-买入价格: $0.64 (bestAsk)
-买入数量: 10 股
-买入成本: $6.40
-余额: $1000 - $6.40 = $993.60
+Buy price: $0.64 (bestAsk)
+Buy quantity: 10 shares
+Buy cost: $6.40
+Balance: $1000 - $6.40 = $993.60
 ```
 
-#### 4. 持仓浮盈更新
-价格变化：`bestBid = 0.68, bestAsk = 0.70`
+#### 4. Position Unrealized P&L Update
+Price changes: `bestBid = 0.68, bestAsk = 0.70`
 
 ```typescript
-当前卖出价: $0.68 (bestBid)
-浮盈 = (0.68 - 0.64) * 10 = $0.40
-浮盈率 = (0.40 / 6.40) * 100 = 6.25%
+Current sell price: $0.68 (bestBid)
+Unrealized P&L = (0.68 - 0.64) * 10 = $0.40
+Unrealized P&L% = (0.40 / 6.40) * 100 = 6.25%
 ```
 
-#### 5. 比赛结束平仓
-最终 `bestBid = 0.72`
+#### 5. Match Ends, Close Position
+Final `bestBid = 0.72`
 
 ```typescript
-卖出价格: $0.72 (bestBid)
-卖出收入: 10 * 0.72 = $7.20
-实际利润: $7.20 - $6.40 = $0.80
-利润率: (0.80 / 6.40) * 100 = 12.5%
+Sell price: $0.72 (bestBid)
+Sell revenue: 10 * 0.72 = $7.20
+Actual profit: $7.20 - $6.40 = $0.80
+Profit%: (0.80 / 6.40) * 100 = 12.5%
 ```
 
 ---
 
-## ⚠️ 常见错误
+## ⚠️ Common Mistakes
 
-### ❌ 错误 1：套利判断使用 midPrice
+### ❌ Mistake 1: Using midPrice for Arbitrage Judgment
 ```typescript
-// 错误
+// Wrong
 const profitMargin = espnProb - midPrice;
 ```
 
-**问题**：
+**Problem**:
 - midPrice = `(bid + ask) / 2`
-- 实际买入价是 `bestAsk`，不是 `midPrice`
-- 会**高估利润**约 `spread / 2`
+- Actual buy price is `bestAsk`, not `midPrice`
+- **Overestimates profit** by ~`spread / 2`
 
-**正确**：
+**Correct**:
 ```typescript
 const profitMargin = espnProb - bestAsk;
 ```
 
 ---
 
-### ❌ 错误 2：浮盈计算使用 midPrice
+### ❌ Mistake 2: Using midPrice for Unrealized P&L
 ```typescript
-// 错误
+// Wrong
 const unrealizedPnl = (midPrice - entryPrice) * quantity;
 ```
 
-**问题**：
-- 卖出时收到的是 `bestBid`，不是 `midPrice`
-- 会**高估浮盈**约 `spread / 2`
+**Problem**:
+- When selling, you receive `bestBid`, not `midPrice`
+- **Overestimates unrealized P&L** by ~`spread / 2`
 
-**正确**：
+**Correct**:
 ```typescript
 const unrealizedPnl = (bestBid - entryPrice) * quantity;
 ```
 
 ---
 
-### ❌ 错误 3：平仓使用 midPrice
-```typescript
-// 错误
-const exitRevenue = quantity * midPrice;
-```
+## 📐 Spread Impact
 
-**问题**：
-- 实际收入是 `bestBid`，不是 `midPrice`
-- 会**高估收益**
-
-**正确**：
-```typescript
-const exitRevenue = quantity * bestBid;
-```
-
----
-
-## 📐 价差（Spread）影响
-
-### 价差定义
+### Spread Definition
 ```typescript
 spread = bestAsk - bestBid
 ```
 
-### 典型价差
-- **流动性好的市场**：0.5% - 1%
-- **流动性差的市场**：2% - 5%
+### Typical Spreads
+- **Good liquidity markets**: 0.5% - 1%
+- **Poor liquidity markets**: 2% - 5%
 
-### 影响
-假设 `bestBid = 0.64, bestAsk = 0.66`：
+### Impact
+Assuming `bestBid = 0.64, bestAsk = 0.66`:
 - Spread = 2%
-- 使用 midPrice (0.65) 会导致：
-  - **套利判断**：高估利润 1%
-  - **浮盈计算**：高估浮盈 1%
-  - **实际交易**：少赚 2%（买入多付 1%，卖出少收 1%）
+- Using midPrice (0.65) causes:
+  - **Arbitrage judgment**: Overestimate profit by 1%
+  - **Unrealized P&L**: Overestimate by 1%
+  - **Actual trading**: Earn 2% less (pay 1% more when buying, receive 1% less when selling)
 
 ---
 
-## 🎯 总结
+## 🎯 Summary
 
-| 操作 | 使用价格 | 原因 |
+| Operation | Use Price | Reason |
 |-----|---------|------|
-| **套利判断** | `bestAsk` | 买入成本 |
-| **买入** | `bestAsk` | 实际支付价格 |
-| **浮盈计算** | `bestBid` | 卖出能收到的价格 |
-| **平仓** | `bestBid` | 实际收入 |
-| **显示参考** | `midPrice` | 只用于显示，不用于决策 |
+| **Arbitrage Judgment** | `bestAsk` | Buy cost |
+| **Buy** | `bestAsk` | Actual price paid |
+| **Unrealized P&L** | `bestBid` | Price received when selling |
+| **Close Position** | `bestBid` | Actual revenue |
+| **Display Reference** | `midPrice` | Display only, not for decisions |
 
-**核心原则**：
-- ✅ 买入用 `bestAsk`（你支付的）
-- ✅ 卖出用 `bestBid`（你收到的）
-- ❌ 决策不用 `midPrice`（会导致错误）
+**Core Principles**:
+- ✅ Buy with `bestAsk` (what you pay)
+- ✅ Sell with `bestBid` (what you receive)
+- ❌ Don't use `midPrice` for decisions (causes errors)
 
 ---
 
-## 📚 相关文档
+## 📚 Related Documentation
 
-- [价格使用指南](./PRICE_GUIDE.md)
-- [系统架构](./ARCHITECTURE.md)
-- [WebSocket 订阅指南](./WEBSOCKET_LIMITS.md)
+- [Price Guide](./PRICE_GUIDE.md)
+- [System Architecture](./ARCHITECTURE.md)
+- [WebSocket Subscription Guide](./WEBSOCKET_LIMITS.md)

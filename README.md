@@ -8,7 +8,7 @@
 
 > 🌏 **[中文文档](./README.zh-CN.md)** | **English**
 
-> 📖 **Detailed Documentation**: [System Architecture](./docs/ARCHITECTURE.md) | [Price Guide](./docs/PRICE_GUIDE.md)
+> 📖 **Detailed Documentation**: [API Documentation](./server/API.md)
 
 ## 📁 Project Structure
 
@@ -16,8 +16,6 @@
 polysniper/
 ├── client/          # Frontend app (React + Vite + TailwindCSS)
 ├── server/          # Backend service (Node.js + Express + WebSocket)
-├── shared/          # Shared types and utilities
-├── docs/            # Documentation
 ├── package.json     # Root configuration
 └── README.md        # Project documentation
 ```
@@ -123,8 +121,6 @@ npm start
 | **Bid (Buy Price)** | Receive when selling | `bids[0].price` |
 | **Mid (Mid Price)** | Display, valuation | `(Bid + Ask) / 2` |
 
-> 💡 See [Price Usage Guide](./docs/PRICE_GUIDE.md) for details
-
 ## 🔐 Environment Configuration
 
 ### Backend (.env)
@@ -152,7 +148,6 @@ LOG_LEVEL=info
 > ⚠️ **Important**: 
 > - Polymarket WebSocket requires HTTP proxy access (for networks in China)
 > - Heartbeat mechanism uses WebSocket protocol-level Ping/Pong (15s interval)
-> - Detailed configuration: [server/docs/WEBSOCKET.md](./server/docs/WEBSOCKET.md)
 
 ## 📝 Development Guide
 
@@ -233,18 +228,10 @@ Listen to WebSocket event: paperTradingUpdate
 ### Core Documentation
 - 📖 **[README](./README.md)** - Project overview (English)
 - 📖 **[中文文档](./README.zh-CN.md)** - Project overview (Chinese)
-- 🏗️ **[System Architecture](./docs/ARCHITECTURE.md)** - Architecture design
-- 💰 **[Price Guide](./docs/PRICE_GUIDE.md)** - Bid/Ask/Mid price explanation
-- 🔌 **[WebSocket Limits](./docs/WEBSOCKET_LIMITS.md)** - WebSocket best practices
 
-### Frontend Documentation
-- 🎨 **[Client README](./client/README.md)** - Frontend application
-- 🎯 **[Signals Guide](./client/SIGNALS_GUIDE.md)** - Arbitrage signals explained
-
-### Backend Documentation
-- 🔧 **[Server README](./server/README.md)** - Backend service
-- 📡 **[API Documentation](./server/API.md)** - REST API & WebSocket
-- 🏀 **[Team Mappings](./server/TEAM_MAPPINGS.md)** - NBA team mappings
+### API Documentation
+- 📡 **[API Documentation](./server/API.md)** - REST API & WebSocket (English)
+- 📡 **[API 接口文档](./server/API.zh-CN.md)** - REST API & WebSocket (Chinese)
 
 ## 🤝 Contributing
 

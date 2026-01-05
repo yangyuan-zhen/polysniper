@@ -10,6 +10,10 @@
 
 > 📖 **Detailed Documentation**: [API Documentation](./server/API.md)
 
+## 📸 Interface Preview
+
+![PolySniper 界面](./client/src/assets/poly.png)
+
 ## 📁 Project Structure
 
 ```

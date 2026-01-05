@@ -151,10 +151,14 @@ export function ColorGuide({ isExpanded, onToggle }: ColorGuideProps) {
                     </div>
                     <div className="flex items-start gap-2">
                       <span className="text-yellow-500">•</span>
-                      <span>例：ESPN 65% vs 市场 45¢ → 利润空间 20% ✅</span>
+                      <span>例：ESPN 65% vs Ask 45¢ → 利润空间 20% ✅</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-yellow-500">•</span>
+                      <span className="text-xs text-gray-400">（使用 Ask 卖价购买，模拟真实交易成本）</span>
                     </div>
                     <div className="mt-2 pt-2 border-t border-yellow-500/20 text-gray-400">
-                      <span className="font-semibold text-yellow-400">操作：</span>像猎豹一样扑上去，买入被低估的一方
+                      <span className="font-semibold text-yellow-400">触发条件：</span>比赛 LIVE 状态 + Q1-Q3 节次
                     </div>
                   </div>
                 </div>

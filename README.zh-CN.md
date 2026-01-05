@@ -10,6 +10,10 @@
 
 > 📖 **详细文档**: [系统架构](./docs/ARCHITECTURE.md) | [价格指南](./docs/PRICE_GUIDE.md)
 
+## 📸 界面预览
+
+![PolySniper 界面](./client/src/assets/poly.png)
+
 ## 📁 项目结构
 
 ```

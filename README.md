@@ -199,7 +199,89 @@ docker-compose up -d
    - Polymarket WebSocket: < 1s
    - ESPN polling: 2-30s (dynamically adjusted)
 
-## 💼 Paper Trading Quick Start
+## 💼 Paper Trading System
+
+### 🎯 Core Features
+
+- **Auto-run** - Automatically initialized after project starts, no manual configuration needed
+- **Persistent Storage** - Uses SQLite database, data saved permanently
+- **Real Simulation** - Buy at Ask, sell at Bid, includes slippage
+- **Smart Strategy** - Q1-Q3 value reversion with hybrid exit mechanism
+
+### 💾 Database Usage
+
+#### Database File Location
+```
+server/data/polysniper.db
+```
+
+#### Common Commands
+
+```bash
+cd server
+
+# View database status (account balance, positions, orders)
+npm run init-db
+
+# View latest 20 market snapshots
+npm run view-snapshots
+
+# Reset database (clear all data, start fresh)
+npm run reset-db
+```
+
+### 📊 Auto-recorded Content
+
+#### 1. Paper Trading Account
+- Initial balance: $1000
+- Current balance
+- Total trades, win rate
+- Total P&L, P&L percentage
+
+#### 2. Trade Orders
+- Buy/sell records
+- Entry/exit prices
+- P&L statistics
+- **Battle Context**: scores, quarter, time, ESPN probabilities
+
+#### 3. Market Snapshots (every 3 seconds)
+- **Only saves LIVE and FINAL status** (pre-game data not saved)
+- Scores, probabilities, prices
+- Arbitrage signals
+
+### 🔄 Data Persistence Flow
+
+```
+Start project → Auto-connect to database
+Game starts → Begin saving snapshots
+Find signal → Auto-place order and record
+Game ongoing → Update position P&L
+Game ends → Auto-close and record
+Close project → Data remains in database
+Restart project → Auto-load previous data
+```
+
+### 💡 Important Notes
+
+1. **Data Never Lost** - SQLite database persistently saves all data
+2. **Auto-initialize** - First run automatically creates $1000 initial account
+3. **Pre-game Not Recorded** - Only saves LIVE/FINAL status snapshots to avoid invalid data
+4. **Privacy Protected** - `.db` file added to `.gitignore`
+
+### 📈 View Trading Data
+
+**Real-time View (Frontend)**:
+- Visit `http://localhost:5173`
+- Check "Paper Trading" panel
+
+**Historical View (Command Line)**:
+```bash
+cd server
+npm run view-snapshots  # View market snapshots
+npm run init-db         # View account status
+```
+
+### 🤖 Trading Strategy
 
 ```typescript
 // Runs automatically, no configuration needed
@@ -210,18 +292,23 @@ Trading Logic:
   - Real-time P&L → Market valuation (Mid price)
   - Game ends → Auto close (Bid price)
 
-// View trading records
-Listen to WebSocket event: paperTradingUpdate
+Exit Strategy:
+  - Take Profit: Profit ≥ 25%
+  - Logic Invalidation: ESPN prob reversal ≥ 20%
+  - Hard Stop Loss: Loss ≥ 50%
 ```
 
 **Example Logs:**
 ```
 ✅ [Paper Trading] Buy LA Clippers x11.63 @$0.8600 (Ask price, cost: $10.00)
    Order ID: ORD000001, Confidence: 95.0%, Balance: $990.00
+   Battle: Score 85-82, Q2 3:45, ESPN prob 72%
 
 🔒 [Paper Trading] Close LA Clippers @$0.9500
-   P&L: $10.47 (+121.88%), Balance: $1010.47
+   P&L: +$10.47 (+121.88%), Balance: $1010.47
+   Exit Reason: Take Profit
 ```
+
 
 ## 📚 Documentation Index
 

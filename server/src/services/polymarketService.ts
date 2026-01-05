@@ -121,27 +121,12 @@ class PolymarketService {
           // 处理非 JSON 消息（如 "INVALID OPERATION"）
           if (!rawMessage.startsWith('{') && !rawMessage.startsWith('[')) {
             if (rawMessage === 'INVALID OPERATION') {
-              logger.error('❌ WebSocket 操作被拒绝: INVALID OPERATION');
-              logger.error(`   当前订阅数: ${this.subscribedAssets.size}`);
-              logger.error(`   待订阅数: ${this.pendingSubscriptions.size}`);
-              logger.error(`   可能原因：Token ID 格式错误或订阅消息格式错误`);
-              logger.error(`   上次订阅时间: ${new Date(this.lastSubscribeTime).toISOString()}`);
-              
-              // 不重置订阅状态，而是记录错误并继续
-              // 这样可以避免丢失已订阅的市场
-              logger.error(`   ⚠️ 保留已订阅的市场，不重置状态`);
-              
-              // 输出最近订阅的 5 个 token
-              logger.error(`   最近订阅的 tokens:`);
-              Array.from(this.subscribedAssets).slice(-5).forEach(token => {
-                try {
-                  const bigIntValue = BigInt(token);
-                  const hexValue = '0x' + bigIntValue.toString(16);
-                  logger.error(`      - ${token} (十六进制: ${hexValue.slice(0, 20)}...)`);
-                } catch (error) {
-                  logger.error(`      - ${token}`);
-                }
-              });
+              // 🔧 降低日志级别，避免刷屏
+              // INVALID OPERATION 通常是因为尝试订阅已订阅的 token，或格式问题
+              // 这不影响已有订阅，只记录 debug 级别
+              logger.debug(`⚠️ WebSocket 返回 INVALID OPERATION（已忽略，不影响现有订阅）`);
+              logger.debug(`   当前订阅数: ${this.subscribedAssets.size}, 待订阅数: ${this.pendingSubscriptions.size}`);
+              // 不做任何处理，保留已有订阅
             } else {
               logger.warn(`收到非 JSON WebSocket 消息: ${rawMessage}`);
             }
@@ -291,29 +276,24 @@ class PolymarketService {
           continue;
         }
         
-        try {
-          const book = await this.getOrderBook(assetId);
-          if (book) {
-            // 更新价格缓存并推送
-            // 注意：这里我们使用缓存中的 midPrice，或者如果 book 中有 bid/ask 则计算新的 midPrice
-            const cached = this.priceCache.get(assetId);
-            let midPrice = cached?.price || 0;
-            
-            if (book.bestBid && book.bestAsk) {
-              midPrice = (book.bestBid + book.bestAsk) / 2;
-            }
-            
-            this.updatePrice(assetId, {
-              price: midPrice,
-              bestBid: book.bestBid,
-              bestAsk: book.bestAsk
-            });
-          }
-        } catch (error) {
-          // 忽略单个查询错误，避免日志刷屏
+      try {
+        // 使用 getMidpoint 替代 getOrderBook，避免 Ghost Market 数据
+        const midPrice = await this.getMidpoint(assetId);
+        
+        if (midPrice !== null) {
+          // 只更新中间价，不更新 Bid/Ask (因为 REST API 的 OrderBook 不可靠)
+          // Bid/Ask 将完全依赖 WebSocket 推送
+          this.updatePrice(assetId, {
+            price: midPrice,
+            bestBid: null, // 保持现有值 (在 updatePrice 中处理)
+            bestAsk: null  // 保持现有值
+          });
         }
+      } catch (error) {
+        // 忽略单个查询错误
       }
-    }, 1000);
+    }
+  }, 1000);
   }
 
   /**
@@ -362,6 +342,68 @@ class PolymarketService {
       return null;
     }
   }
+
+  /**
+   * 获取 Token 的中间价 (Midpoint)
+   * 解决 getOrderBook 返回 Ghost Market 数据的问题
+   */
+  private async getMidpoint(tokenId: string): Promise<number | null> {
+    try {
+      const axiosConfig: any = {
+        params: { token_id: tokenId },
+        timeout: 2000,
+      };
+      
+      const proxy = config.polymarket.wsProxy;
+      if (proxy && proxy !== 'none') {
+        const { HttpsProxyAgent } = await import('https-proxy-agent');
+        axiosConfig.httpsAgent = new HttpsProxyAgent(proxy);
+        axiosConfig.httpAgent = new HttpsProxyAgent(proxy);
+      }
+      
+      const response = await axios.get(`${this.clobApiUrl}/midpoint`, axiosConfig);
+      
+      if (response.data && response.data.mid) {
+        return parseFloat(response.data.mid);
+      }
+      return null;
+    } catch (error) {
+      // 忽略 404 或其他错误
+      return null;
+    }
+  }
+
+  /**
+   * 获取 Token 的市场价格 (REST API)
+   * side = 'BUY' -> 获取 Ask (买入价)
+   * side = 'SELL' -> 获取 Bid (卖出价)
+   */
+  private async getMarketPrice(tokenId: string, side: 'BUY' | 'SELL'): Promise<number | null> {
+    try {
+      const axiosConfig: any = {
+        params: { token_id: tokenId, side: side },
+        timeout: 2000,
+      };
+      
+      const proxy = config.polymarket.wsProxy;
+      if (proxy && proxy !== 'none') {
+        const { HttpsProxyAgent } = await import('https-proxy-agent');
+        axiosConfig.httpsAgent = new HttpsProxyAgent(proxy);
+        axiosConfig.httpAgent = new HttpsProxyAgent(proxy);
+      }
+      
+      const response = await axios.get(`${this.clobApiUrl}/price`, axiosConfig);
+      
+      if (response.data && response.data.price) {
+        return parseFloat(response.data.price);
+      }
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+
 
   /**
    * 重连机制（指数退避）
@@ -794,6 +836,35 @@ class PolymarketService {
     // 获取现有缓存
     const cached = this.priceCache.get(assetId);
     
+    // ========== Ghost Market 过滤 ==========
+    // 检测并拒绝明显异常的价格（如 0.99/0.01）
+    const isGhostPrice = (bid: number | null, ask: number | null, mid: number): boolean => {
+      // 如果 Bid/Ask 接近极端值 (0.99 或 0.01)，可能是 Ghost Market
+      if (bid !== null && (bid >= 0.98 || bid <= 0.02)) return true;
+      if (ask !== null && (ask >= 0.98 || ask <= 0.02)) return true;
+      
+      // 如果 Bid/Ask 与 Midpoint 差距超过 30%，可能是异常数据
+      if (mid > 0) {
+        if (bid !== null && Math.abs(bid - mid) / mid > 0.3) return true;
+        if (ask !== null && Math.abs(ask - mid) / mid > 0.3) return true;
+      }
+      
+      return false;
+    };
+    
+    // 如果检测到 Ghost Price，保留旧数据
+    if (isGhostPrice(priceData.bestBid, priceData.bestAsk, priceData.price)) {
+      logger.debug(`🚫 Ghost Market 检测: 拒绝异常价格 Bid=${priceData.bestBid}, Ask=${priceData.bestAsk}, Mid=${priceData.price}`);
+      // 如果有缓存数据，保留缓存；否则只更新 midpoint
+      if (cached) {
+        priceData.bestBid = cached.bestBid;
+        priceData.bestAsk = cached.bestAsk;
+      } else {
+        priceData.bestBid = null;
+        priceData.bestAsk = null;
+      }
+    }
+    
     // 合并数据：如果新数据的 bid/ask 为空，则保留旧数据
     const mergedData = {
       price: priceData.price,
@@ -830,16 +901,157 @@ class PolymarketService {
    */
   async searchNBAMarkets(homeTeam: string, awayTeam: string): Promise<PolymarketData | null> {
     try {
-      // ========== 第一层：范围锁定 (Scope) ==========
-      // 条件：只请求 NBA 相关且 active/未结算的市场
-      // 目的：排除历史比赛，只留下当前的 10-20 场 NBA 比赛
+      // 查找球队映射（从静态映射表）
+      const homeTeamMapping = findTeamByChinese(homeTeam);
+      const awayTeamMapping = findTeamByChinese(awayTeam);
+      
+      if (!homeTeamMapping || !awayTeamMapping) {
+        logger.warn(`[Layer 2] ⚠️ 无法找到球队映射: ${homeTeam} 或 ${awayTeam}`);
+        return null;
+      }
+
+      // ========== 策略1：Slug 直接搜索 (最可靠) ==========
+      // Polymarket slug 格式: nba-{away_abbr}-{home_abbr}-{date} 或 nba-{home_abbr}-{away_abbr}-{date}
+      // 例如: nba-atl-tor-2026-01-05
+      const today = new Date();
+      const dateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      
+      const homeAbbr = homeTeamMapping.abbr.toLowerCase();
+      const awayAbbr = awayTeamMapping.abbr.toLowerCase();
+      
+      // 尝试两种可能的 slug 格式（主客场顺序不确定）
+      const possibleSlugs = [
+        `nba-${homeAbbr}-${awayAbbr}-${dateStr}`,
+        `nba-${awayAbbr}-${homeAbbr}-${dateStr}`,
+        `nba-${homeAbbr}-${awayAbbr}-${tomorrowStr}`,
+        `nba-${awayAbbr}-${homeAbbr}-${tomorrowStr}`,
+      ];
+      
+      logger.debug(`[Slug Search] 尝试 slug 搜索: ${possibleSlugs.join(' | ')}`);
+      
+      let slugFoundEvent: any = null;
+      for (const slug of possibleSlugs) {
+        try {
+          const slugResponse = await axios.get(`${this.gammaApiUrl}/events`, {
+            params: { slug: slug },
+            timeout: 5000,
+          });
+          
+          if (slugResponse.data && slugResponse.data.length > 0) {
+            const event = slugResponse.data[0];
+            if (event.active && !event.closed) {
+              logger.info(`[Slug Search] ✅ 找到比赛 (slug=${slug}): ${event.title}`);
+              slugFoundEvent = event;
+              break;
+            }
+          }
+        } catch (err) {
+          // Slug 不存在，继续尝试下一个
+        }
+      }
+      
+      // 如果 slug 搜索找到了，直接使用它，不需要 series_id 搜索
+      if (slugFoundEvent) {
+        // 直接使用 slug 找到的 event，跳转到后续处理逻辑
+        const event = slugFoundEvent;
+        logger.info(`找到 event: ${event.title}`);
+        
+        // 以下是原有的 event 处理逻辑 (直接复制过来处理 slug 找到的 event)
+        const markets = event.markets || [];
+        if (markets.length === 0) {
+          logger.warn('Event 没有 markets 数据');
+          return null;
+        }
+        
+        // 筛选 Winner 市场 (简化逻辑)
+        const winnerMarket = markets.find((m: any) => {
+          const question = (m.question || m.groupItemTitle || '').toLowerCase();
+          const excludeKeywords = ['spread', 'handicap', 'points', 'total', 'over', 'o/u', 'quarter', '1q', '2q', '3q', '4q', 'q1', 'q2', 'q3', 'q4', 'half', '1h', '2h', 'first half', 'second half', 'more than', 'less than', 'by more', 'beat by'];
+          const hasUnder = question.includes('under') && !question.includes('thunder');
+          if (excludeKeywords.some(kw => question.includes(kw)) || hasUnder) return false;
+          return question.includes('vs') || question.includes('winner') || question.includes('win');
+        });
+        
+        if (!winnerMarket) {
+          logger.warn('未找到 Winner (胜负盘) 市场');
+          return null;
+        }
+        
+        const market = winnerMarket;
+        let outcomes: string[] = typeof market.outcomes === 'string' ? JSON.parse(market.outcomes) : market.outcomes;
+        let outcomePrices: string[] = typeof market.outcomePrices === 'string' ? JSON.parse(market.outcomePrices) : market.outcomePrices;
+        let tokenIds: string[] = typeof market.clobTokenIds === 'string' ? JSON.parse(market.clobTokenIds) : (market.clobTokenIds || []);
+        
+        if (outcomes.length < 2 || outcomePrices.length < 2) {
+          logger.warn('市场结果或价格数据不足');
+          return null;
+        }
+        
+        let homeIndex = -1, awayIndex = -1;
+        outcomes.forEach((outcome: string, idx: number) => {
+          const outcomeLower = outcome.toLowerCase();
+          if ([homeTeamMapping.polymarketName, homeTeamMapping.abbr].some(k => outcomeLower.includes(k.toLowerCase()))) homeIndex = idx;
+          if ([awayTeamMapping.polymarketName, awayTeamMapping.abbr].some(k => outcomeLower.includes(k.toLowerCase()))) awayIndex = idx;
+        });
+        
+        if (homeIndex === -1 || awayIndex === -1) {
+          logger.warn(`无法在 outcomes [${outcomes.join(', ')}] 中找到主客队`);
+          return null;
+        }
+        
+        let homePrice = parseFloat(outcomePrices[homeIndex] || '0');
+        let awayPrice = parseFloat(outcomePrices[awayIndex] || '0');
+        const homeTokenId = tokenIds[homeIndex] || '';
+        const awayTokenId = tokenIds[awayIndex] || '';
+        
+        // 获取初始价格
+        try {
+          const [homeMid, awayMid, homeAsk, homeBid, awayAsk, awayBid] = await Promise.all([
+            this.getMidpoint(homeTokenId), this.getMidpoint(awayTokenId),
+            this.getMarketPrice(homeTokenId, 'BUY'), this.getMarketPrice(homeTokenId, 'SELL'),
+            this.getMarketPrice(awayTokenId, 'BUY'), this.getMarketPrice(awayTokenId, 'SELL')
+          ]);
+          if (homeMid || homeAsk || homeBid) {
+            homePrice = homeMid || (homeBid && homeAsk ? (homeBid + homeAsk) / 2 : homePrice);
+            this.updatePrice(homeTokenId, { price: homePrice, bestBid: homeBid, bestAsk: homeAsk });
+          }
+          if (awayMid || awayAsk || awayBid) {
+            awayPrice = awayMid || (awayBid && awayAsk ? (awayBid + awayAsk) / 2 : awayPrice);
+            this.updatePrice(awayTokenId, { price: awayPrice, bestBid: awayBid, bestAsk: awayAsk });
+          }
+        } catch (error) {
+          logger.warn('获取初始价格失败，将依赖 WebSocket 更新:', error);
+        }
+        
+        logger.info(`📊 Polymarket 价格 [${homeTeam} vs ${awayTeam}]: ${homeTeamMapping.polymarketName}=$${homePrice.toFixed(4)}, ${awayTeamMapping.polymarketName}=$${awayPrice.toFixed(4)}`);
+        
+        return {
+          marketId: market.conditionId || market.condition_id || market.id || '',
+          homeTokenId,
+          awayTokenId,
+          homePrice,
+          awayPrice,
+          homeBestBid: undefined,
+          homeBestAsk: undefined,
+          awayBestBid: undefined,
+          awayBestAsk: undefined,
+          liquidity: parseFloat(market.liquidity || '0'),
+        };
+      }
+      
+      logger.debug(`[Slug Search] slug 搜索未找到，回退到 series_id 搜索`);
+      
+      // ========== 策略2：Series ID 搜索 (回退) ==========
       const response = await axios.get(`${this.gammaApiUrl}/events`, {
         params: { 
           series_id: '10345',  // NBA 2026 series
           limit: 100, 
           offset: 0,
-          closed: false,       // 排除已关闭的市场
-          active: true,        // 只要进行中/未结算的市场
+          closed: false,
+          active: true,
         },
         timeout: 10000,
       });
@@ -855,26 +1067,12 @@ class PolymarketService {
 
       // 第一层范围锁定的二次过滤（双保险）
       const nbaEvents = allEvents.filter((e: any) => {
-        // 必须未关闭
         if (e.closed === true) return false;
-        
-        // 必须激活
         if (e.active === false) return false;
-        
-        // 必须是 NBA 相关
         const text = `${e.title} ${e.slug} ${e.category}`.toLowerCase();
         if (!text.includes('nba') && !text.includes('basketball')) return false;
-        
-        // 注意：不检查 endDate 是否在未来，因为比赛结束后市场可能还需要时间结算
-        // active=true 和 closed=false 已经足够过滤了
-        
         return true;
       });
-      
-      // 查找球队映射（从静态映射表）
-      // 虎扑传入的是中文名（如：活塞、老鹰），需要使用 findTeamByChinese
-      const homeTeamMapping = findTeamByChinese(homeTeam);
-      const awayTeamMapping = findTeamByChinese(awayTeam);
       
       if (!homeTeamMapping || !awayTeamMapping) {
         logger.warn(`[Layer 2] ⚠️ 无法找到球队映射: ${homeTeam} 或 ${awayTeam}`);
@@ -1070,37 +1268,59 @@ class PolymarketService {
       logger.info(`   原始 outcomePrices: ${JSON.stringify(outcomePrices)}`);
       logger.info(`   解析后: ${outcomes[homeIndex]}=$${homePrice.toFixed(4)}, ${outcomes[awayIndex]}=$${awayPrice.toFixed(4)}`);
 
-      // 获取初始订单簿数据（填充缓存）
-      // 这一步至关重要，因为 WebSocket 初始可能没有推送 bid/ask
+      // 获取初始价格数据（使用 Midpoint 和 MarketPrice，避免 OrderBook 的 Ghost Market 问题）
       try {
-        logger.info(`[Layer 3] 正在获取初始订单簿数据: ${homeTeam} vs ${awayTeam}`);
+        logger.info(`[Layer 3] 正在获取初始价格数据: ${homeTeam} vs ${awayTeam}`);
         
-        const [homeBook, awayBook] = await Promise.all([
-          this.getOrderBook(homeTokenId),
-          this.getOrderBook(awayTokenId)
+        const [homeMid, awayMid, homeAsk, homeBid, awayAsk, awayBid] = await Promise.all([
+          this.getMidpoint(homeTokenId),
+          this.getMidpoint(awayTokenId),
+          this.getMarketPrice(homeTokenId, 'BUY'),  // Ask
+          this.getMarketPrice(homeTokenId, 'SELL'), // Bid
+          this.getMarketPrice(awayTokenId, 'BUY'),  // Ask
+          this.getMarketPrice(awayTokenId, 'SELL')  // Bid
         ]);
         
-        if (homeBook) {
-          logger.debug(`  主队初始价格: Bid=${homeBook.bestBid}, Ask=${homeBook.bestAsk}`);
-          // 立即更新缓存
+        // 更新主队价格
+        if (homeMid || homeAsk || homeBid) {
+          // 优先使用 Midpoint，如果没有则尝试 (Bid+Ask)/2，最后使用 homePrice
+          let price = homePrice;
+          if (homeMid) {
+            price = homeMid;
+          } else if (homeBid && homeAsk) {
+            price = (homeBid + homeAsk) / 2;
+          }
+          
+          logger.debug(`  主队初始价格: Mid=${homeMid}, Bid=${homeBid}, Ask=${homeAsk} -> 使用: ${price}`);
+          
           this.updatePrice(homeTokenId, {
-            price: homePrice, // 保持原有 midPrice
-            bestBid: homeBook.bestBid,
-            bestAsk: homeBook.bestAsk
+            price: price,
+            bestBid: homeBid,
+            bestAsk: homeAsk
           });
+          homePrice = price;
         }
         
-        if (awayBook) {
-          logger.debug(`  客队初始价格: Bid=${awayBook.bestBid}, Ask=${awayBook.bestAsk}`);
-          // 立即更新缓存
+        // 更新客队价格
+        if (awayMid || awayAsk || awayBid) {
+          let price = awayPrice;
+          if (awayMid) {
+            price = awayMid;
+          } else if (awayBid && awayAsk) {
+            price = (awayBid + awayAsk) / 2;
+          }
+          
+          logger.debug(`  客队初始价格: Mid=${awayMid}, Bid=${awayBid}, Ask=${awayAsk} -> 使用: ${price}`);
+          
           this.updatePrice(awayTokenId, {
-            price: awayPrice, // 保持原有 midPrice
-            bestBid: awayBook.bestBid,
-            bestAsk: awayBook.bestAsk
+            price: price,
+            bestBid: awayBid,
+            bestAsk: awayAsk
           });
+          awayPrice = price;
         }
       } catch (error) {
-        logger.warn('获取初始订单簿失败，将依赖 WebSocket 更新:', error);
+        logger.warn('获取初始价格失败，将依赖 WebSocket 更新:', error);
       }
 
       return {

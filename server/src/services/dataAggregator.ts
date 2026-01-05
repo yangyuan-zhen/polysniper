@@ -378,12 +378,12 @@ class DataAggregator {
             match.poly.awayBestAsk,  // 买入价
             match.poly.homePrice,    // 中间价（备用）
             match.poly.awayPrice,    // 中间价（备用）
-            // 战场情况
+            // 战场情况（现在使用 ESPN 提供的数据）
             match.homeTeam.score,
             match.awayTeam.score,
             match.status,
-            undefined, // quarter - 暂时没有
-            undefined, // timeRemaining - 暂时没有
+            match.quarter,         // 🏀 来自 ESPN 的比赛节次
+            match.timeRemaining,   // ⏰ 来自 ESPN 的剩余时间
             match.espn?.homeWinProb || match.espn?.pregameHomeWinProb,
             match.espn?.awayWinProb || match.espn?.pregameAwayWinProb
           );
@@ -405,10 +405,12 @@ class DataAggregator {
           match.poly.awayBestBid || match.poly.awayPrice, // 使用 bestBid（卖出价）
           espnHomeProb, // 传递 ESPN 胜率用于逻辑证伪检查
           espnAwayProb, // 传递 ESPN 胜率用于逻辑证伪检查
-          // 当前战场情况
+          // 当前战场情况（使用 ESPN 数据）
           match.homeTeam.score,
           match.awayTeam.score,
-          match.status
+          match.status,
+          match.quarter,        // 🏀 来自 ESPN 的比赛节次
+          match.timeRemaining   // ⏰ 来自 ESPN 的剩余时间
         );
       }
     }
@@ -440,9 +442,16 @@ class DataAggregator {
 
   /**
    * 保存市场快照到数据库（用于回测分析）
+   * 只保存 LIVE 和 FINAL 的比赛，跳过 PRE（赛前）状态
    */
   private async saveMarketSnapshot(match: UnifiedMatch): Promise<void> {
     try {
+      // 🎯 过滤：只保存进行中和已结束的比赛
+      if (match.status === MatchStatus.PRE) {
+        logger.debug(`跳过赛前快照: ${match.homeTeam.name} vs ${match.awayTeam.name}`);
+        return;
+      }
+
       await databaseService.saveMarketSnapshot({
         matchId: match.id,
         homeTeam: match.homeTeam.name,
@@ -450,6 +459,8 @@ class DataAggregator {
         homeScore: match.homeTeam.score,
         awayScore: match.awayTeam.score,
         matchStatus: match.status,
+        quarter: match.quarter,
+        timeRemaining: match.timeRemaining,
         // ESPN 数据
         espnHomeWinProb: match.espn?.homeWinProb,
         espnAwayWinProb: match.espn?.awayWinProb,
@@ -536,23 +547,35 @@ class DataAggregator {
     if (statusType === 'pre') {
       match.status = MatchStatus.PRE;
       match.statusStr = '未开始';
+      match.quarter = undefined;
+      match.timeRemaining = undefined;
     } else if (statusType === 'in') {
       match.status = MatchStatus.LIVE;
       const period = espnGame.status?.period || 0;
       const clock = espnGame.status?.displayClock || '';
       
-      // 设置状态字符串
+      // 🏀 解析节次 (quarter)
       let quarterStr = '';
-      if (period === 5) {
-        quarterStr = 'OT';
+      if (period >= 5) {
+        quarterStr = 'OT';  // 加时赛（可能有 OT1, OT2...）
+        if (period > 5) {
+          quarterStr = `OT${period - 4}`;  // OT2, OT3...
+        }
       } else if (period >= 1 && period <= 4) {
         quarterStr = `Q${period}`;
       }
       
+      // 🎯 保存到 match 对象（供套利引擎使用）
+      match.quarter = quarterStr;
+      match.timeRemaining = clock;
       match.statusStr = `${quarterStr} ${clock}`;
+      
+      logger.debug(`🏀 比赛进度: ${match.homeTeam.name} vs ${match.awayTeam.name} - ${quarterStr} ${clock}`);
     } else if (statusType === 'post') {
       match.status = MatchStatus.FINAL;
       match.statusStr = '已结束';
+      match.quarter = 'FINAL';
+      match.timeRemaining = '00:00';
     }
   }
 

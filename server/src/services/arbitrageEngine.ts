@@ -23,17 +23,31 @@ class ArbitrageEngine {
   calculateSignals(match: UnifiedMatch): ArbitrageSignal[] {
     const signals: ArbitrageSignal[] = [];
 
-    // 只在比赛进行中或即将开始时计算套利机会
-    if (match.status === MatchStatus.FINAL) {
+    // 严格限制：只在比赛进行中 (LIVE) 计算套利机会
+    // 未开始 (PRE/SCHEDULED) 或 已结束 (FINAL) 的比赛不参与
+    if (match.status !== MatchStatus.LIVE) {
       return signals;
     }
 
-    // 铁律：只做前三节（Q1-Q3）
-    // 注意：移除虎扑数据源后，无法通过 quarter 判断比赛阶段
-    // 暂时禁用此逻辑，直到找到替代数据源
+    // 🏀 铁律：只做前三节（Q1-Q3）
+    // 第四节和加时赛是"赌博逻辑"，不参与
+    // 现在使用 ESPN 提供的 quarter 数据进行精确判断
     if (match.status === MatchStatus.LIVE) {
-      // TODO: 需要替代方案来判断比赛阶段
-      return signals;
+      const quarter = match.quarter;
+      
+      // 如果没有 quarter 数据，保守处理，不生成信号
+      if (!quarter) {
+        logger.debug(`❌ 缺少比赛阶段数据，跳过: ${match.homeTeam.name} vs ${match.awayTeam.name}`);
+        return signals;
+      }
+      
+      // 第四节 (Q4) 和加时赛 (OT) 不参与
+      if (quarter === 'Q4' || quarter.startsWith('OT')) {
+        logger.debug(`⏰ 铁律：${quarter} 不参与套利（避免赌博逻辑）: ${match.homeTeam.name} vs ${match.awayTeam.name}`);
+        return signals;
+      }
+      
+      logger.debug(`✅ ${quarter} ${match.timeRemaining || ''} - 允许套利分析: ${match.homeTeam.name} vs ${match.awayTeam.name}`);
     }
 
     // 检查数据完整性
@@ -125,27 +139,42 @@ class ArbitrageEngine {
     // 利润空间越大，市场犯的错越离谱，我们越有信心
     let confidence = Math.min(0.5 + profitMargin * 3, 0.95); // 10%起步=0.8，20%=0.95
 
-    // 时间因素：前三节，时间越多越好（时间是我们的盟友）
-    // 注意：移除虎扑数据源后，无法获取 quarter 和 timeRemaining
-    // TODO: 需要替代数据源来计算时间因素
+    // 🕐 时间因素：前三节，时间越多越好（时间是我们的盟友）
+    // 使用 ESPN 提供的 quarter 和 timeRemaining 数据
+    if (match.quarter && match.timeRemaining) {
+      const totalSecondsRemaining = this.parseTimeRemaining(match.timeRemaining, match.quarter);
+      const maxTime = 48 * 60; // NBA 比赛总时长 48 分钟
+      const timeRatio = totalSecondsRemaining / maxTime;
+      
+      // 时间因素加成：时间越多，置信度越高（最多 +10%）
+      const timeBonus = timeRatio * 0.1;
+      confidence = Math.min(confidence + timeBonus, 0.95);
+      
+      logger.debug(`⏰ 时间加成: ${match.quarter} ${match.timeRemaining} (剩余${Math.floor(totalSecondsRemaining / 60)}分钟) +${(timeBonus * 100).toFixed(1)}% 置信度`);
+    }
 
     // 生成信号
     const scoreDiff = isHome 
       ? match.homeTeam.score - match.awayTeam.score
       : match.awayTeam.score - match.homeTeam.score;
 
+    // 构建时间显示字符串
+    const timeDisplay = match.quarter && match.timeRemaining 
+      ? `${match.quarter} ${match.timeRemaining}` 
+      : 'PRE';
+
     return {
       type: isHome ? SignalType.BUY_HOME : SignalType.BUY_AWAY,
       confidence,
       edge: profitMargin * 100, // 转换为百分比
-      reason: `🎯 ${teamName} ESPN${(espnProb * 100).toFixed(1)}% vs Ask${(buyPrice * 100).toFixed(1)}% 利润空间${(profitMargin * 100).toFixed(1)}% (Edge ${(profitMargin * 100).toFixed(1)}%)`,
+      reason: `🎯 ${teamName} ESPN${(espnProb * 100).toFixed(1)}% vs Ask${(buyPrice * 100).toFixed(1)}% 利润空间${(profitMargin * 100).toFixed(1)}% [${timeDisplay}]`,
       timestamp: Date.now(),
       details: {
         espnProb,
         polyPrice: buyPrice, // 使用 bestAsk 作为价格
         priceDiff: profitMargin,
         scoreDiff,
-        timeRemaining: 'N/A', // TODO: 需要从 ESPN 获取比赛时间信息
+        timeRemaining: timeDisplay,
       },
     };
   }

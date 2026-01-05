@@ -11,6 +11,7 @@
     "backtest": "ts-node scripts/backtestAnalysis.ts",
     "init-db": "ts-node scripts/initDatabase.ts",
     "reset-db": "ts-node scripts/initDatabase.ts --reset",
+    "view-snapshots": "ts-node scripts/viewSnapshots.ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:watch": "jest --watch",
     "test:data": "ts-node src/test/dataSourceTest.ts",

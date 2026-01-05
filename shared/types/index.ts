@@ -111,6 +111,8 @@ export interface UnifiedMatch {
   status: MatchStatus;
   statusStr: string;       // "Q4 02:30" 或 "未开始" 或 "已结束"
   startTime?: string;      // 比赛开始时间
+  quarter?: string;        // 比赛节次: Q1, Q2, Q3, Q4, OT (来自 ESPN)
+  timeRemaining?: string;  // 当前节剩余时间: "05:30" (来自 ESPN)
   
   // Polymarket 数据
   poly: PolymarketData;

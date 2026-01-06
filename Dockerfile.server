@@ -1,0 +1,22 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# 1. 构建 shared 模块
+COPY shared ./shared
+WORKDIR /app/shared
+# 使用 npm install 而不是 ci，因为可能没有 package-lock.json
+RUN npm install
+RUN npm run build
+
+# 2. 构建 server 模块
+WORKDIR /app
+COPY server ./server
+WORKDIR /app/server
+RUN npm install
+RUN npm run build
+
+EXPOSE 3000
+
+# 启动命令
+CMD ["npm", "start"]

@@ -1,0 +1,25 @@
+FROM node:18-alpine as builder
+
+WORKDIR /app
+
+# 1. 构建 shared 模块
+COPY shared ./shared
+WORKDIR /app/shared
+RUN npm install
+RUN npm run build
+
+# 2. 构建 client 模块
+WORKDIR /app
+COPY client ./client
+WORKDIR /app/client
+RUN npm install
+RUN npm run build
+
+# 3. Nginx 托管
+FROM nginx:alpine
+COPY --from=builder /app/client/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

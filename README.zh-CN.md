@@ -109,7 +109,7 @@ npm start
 
 ### 实时数据（不缓存）
 - ✅ **比分、时间、ESPN 胜率、Polymarket 价格**
-- ESPN: 每 **3秒** 请求一次（节流）
+- ESPN: 每 **1秒** 请求一次（节流）
 - Polymarket: **WebSocket 实时推送**（被动接收）
 - 前端: 每 **500ms** 推送一次
 
@@ -136,10 +136,11 @@ npm start
 PORT=3000
 NODE_ENV=development
 
-# Polymarket WebSocket（⚠️ 国内需要代理！）
+# Polymarket WebSocket
 POLYMARKET_WS_ENABLED=true
 POLYMARKET_WS_URL=wss://ws-subscriptions-clob.polymarket.com/ws/market
-POLYMARKET_WS_PROXY=http://127.0.0.1:7890
+# 代理设置：海外服务器用 'none'，国内用 'http://127.0.0.1:7890'
+POLYMARKET_WS_PROXY=none
 
 # CORS
 CORS_ORIGIN=*
@@ -176,22 +177,48 @@ npm run test     # 运行测试
 
 ## 📦 部署
 
-### 使用 PM2 (推荐)
+### Docker 部署（推荐）
+
+```bash
+# 1. 克隆项目到服务器
+git clone <your-repo-url> polysniper
+cd polysniper
+
+# 2. 配置环境变量
+cp server/.env.example .env
+nano .env  # 海外服务器设置 POLYMARKET_WS_PROXY=none
+
+# 3. 启动所有服务（前端 + 后端 + Redis）
+docker compose up -d --build
+
+# 4. 查看日志
+docker compose logs -f server
+
+# 5. 访问应用
+# 前端: http://<服务器IP>
+# API: http://<服务器IP>/api/matches
+```
+
+#### Docker 常用命令
+| 命令 | 说明 |
+|------|------|
+| `docker compose up -d` | 启动所有服务 |
+| `docker compose down` | 停止所有服务 |
+| `docker compose restart server` | 重启后端 |
+| `docker compose logs -f server` | 查看后端日志 |
+| `docker compose ps` | 查看容器状态 |
+
+### 使用 PM2（备选方案）
 ```bash
 cd server
 npm run start:pm2
 ```
 
-### Docker (待实现)
-```bash
-docker-compose up -d
-```
-
 ## ⚠️ 重要注意事项
 
-1. **代理必需** 🌐
-   - Polymarket API 需要代理访问
-   - 配置 `POLYMARKET_WS_PROXY` 环境变量
+1. **代理配置** 🌐
+   - **海外服务器**：设置 `POLYMARKET_WS_PROXY=none`
+   - **国内网络**：设置 `POLYMARKET_WS_PROXY=http://127.0.0.1:7890`（或你的代理地址）
 
 2. **WebSocket 订阅限制** 📡
    - 单次订阅最多 10 个 tokens

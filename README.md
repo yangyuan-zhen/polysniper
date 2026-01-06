@@ -109,7 +109,7 @@ npm start
 
 ### Real-time Data (No Cache)
 - ✅ **Scores, Time, ESPN Win Prob, Polymarket Prices**
-- ESPN: Request every **3 seconds** (throttled)
+- ESPN: Request every **1 second** (throttled)
 - Polymarket: **WebSocket real-time push** (passive receive)
 - Frontend: Push every **500ms**
 
@@ -134,10 +134,11 @@ npm start
 PORT=3000
 NODE_ENV=development
 
-# Polymarket WebSocket (⚠️ Requires proxy in China!)
+# Polymarket WebSocket
 POLYMARKET_WS_ENABLED=true
 POLYMARKET_WS_URL=wss://ws-subscriptions-clob.polymarket.com/ws/market
-POLYMARKET_WS_PROXY=http://127.0.0.1:7890
+# Proxy: use 'none' for overseas servers, or 'http://127.0.0.1:7890' for China
+POLYMARKET_WS_PROXY=none
 
 # CORS
 CORS_ORIGIN=*
@@ -173,22 +174,48 @@ npm run test     # Run tests
 
 ## 📦 Deployment
 
-### Using PM2 (Recommended)
+### Docker Deployment (Recommended)
+
+```bash
+# 1. Clone the project to your server
+git clone <your-repo-url> polysniper
+cd polysniper
+
+# 2. Configure environment variables
+cp server/.env.example .env
+nano .env  # Set POLYMARKET_WS_PROXY=none for overseas servers
+
+# 3. Start all services (frontend + backend + Redis)
+docker compose up -d --build
+
+# 4. View logs
+docker compose logs -f server
+
+# 5. Access the application
+# Frontend: http://<your-server-ip>
+# API: http://<your-server-ip>/api/matches
+```
+
+#### Docker Commands Reference
+| Command | Description |
+|---------|-------------|
+| `docker compose up -d` | Start all services |
+| `docker compose down` | Stop all services |
+| `docker compose restart server` | Restart backend |
+| `docker compose logs -f server` | View backend logs |
+| `docker compose ps` | Check container status |
+
+### Using PM2 (Alternative)
 ```bash
 cd server
 npm run start:pm2
 ```
 
-### Docker (To Be Implemented)
-```bash
-docker-compose up -d
-```
-
 ## ⚠️ Important Notes
 
-1. **Proxy Required** 🌐
-   - Polymarket API requires proxy access
-   - Configure `POLYMARKET_WS_PROXY` environment variable
+1. **Proxy Configuration** 🌐
+   - **Overseas servers**: Set `POLYMARKET_WS_PROXY=none`
+   - **China networks**: Set `POLYMARKET_WS_PROXY=http://127.0.0.1:7890` (or your proxy address)
 
 2. **WebSocket Subscription Limits** 📡
    - Maximum 10 tokens per subscription

@@ -26,7 +26,7 @@ export const config = {
   // ESPN API
   espn: {
     apiUrl: 'http://site.api.espn.com/apis/site/v2/sports/basketball/nba',
-    updateInterval: 10000, // 10秒更新一次
+    // 注意：实际更新间隔由 dataAggregator.ts 控制（1秒），此配置未使用
   },
   
   // Redis配置

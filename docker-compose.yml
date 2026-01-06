@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # 后端服务
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_ENABLED=true
+      - REDIS_URL=redis://redis:6379
+      # VPS 上通常不需要代理，如果需要请在 .env 中设置
+      - POLYMARKET_WS_PROXY=${POLYMARKET_WS_PROXY:-none}
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    restart: always
+    networks:
+      - app-network
+
+  # 前端服务 (Nginx)
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    restart: always
+    networks:
+      - app-network
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: always
+    networks:
+      - app-network
+
+volumes:
+  redis_data:
+
+networks:
+  app-network:
+    driver: bridge

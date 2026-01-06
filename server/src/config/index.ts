@@ -17,8 +17,8 @@ export const config = {
     wsUrl: process.env.POLYMARKET_WS_URL || 'wss://ws-subscriptions-clob.polymarket.com/ws/market',
     // WebSocket 启用开关
     wsEnabled: true, // 启用 WebSocket 连接获取实时价格
-    // WebSocket 代理设置，使用 Clash 代理
-    wsProxy: 'http://127.0.0.1:7890',
+    // WebSocket 代理设置（从环境变量读取，默认不使用代理）
+    wsProxy: process.env.POLYMARKET_WS_PROXY || 'none',
     // API Key - 仅交易时需要
     apiKey: process.env.POLYMARKET_API_KEY || '',
   },

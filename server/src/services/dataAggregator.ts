@@ -199,10 +199,9 @@ class DataAggregator {
       });
 
       // 过滤掉已结束的比赛
-      const activeGames = allGames.filter((game: any) => {
-        const status = game.status?.type?.state;
-        return status !== 'post'; // ESPN 使用 'post' 表示已结束
-      });
+      // 修改：不再过滤 'post' 状态，以确保比赛结束后能更新状态为 FINAL
+      // 我们会在 updateMatch 中针对已结束的比赛进行优化（跳过 API 请求）
+      const activeGames = allGames;
 
       // 检测是否有进行中的比赛
       const liveGames = activeGames.filter((game: any) => game.status?.type?.state === 'in');
@@ -266,9 +265,18 @@ class DataAggregator {
     this.parseESPNGameStatus(match, espnGame);
 
     // ========== 并行请求详细数据 ==========
+    // 优化：如果比赛已结束 (FINAL)，不再请求详细数据，节省 API 资源
+    let espnPromise: Promise<any> = Promise.resolve(null);
+    let polyPromise: Promise<any> = Promise.resolve(null);
+
+    if (match.status !== MatchStatus.FINAL) {
+      espnPromise = espnService.getGameWinProbability(espnGame.id);
+      polyPromise = this.searchPolymarketByESPNTeams(homeTeamName, awayTeamName);
+    }
+
     const [espnResult, polyResult] = await Promise.allSettled([
-      espnService.getGameWinProbability(espnGame.id),
-      this.searchPolymarketByESPNTeams(homeTeamName, awayTeamName),
+      espnPromise,
+      polyPromise,
     ]);
 
     // 处理 ESPN 数据（胜率）

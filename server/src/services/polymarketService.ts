@@ -913,21 +913,23 @@ class PolymarketService {
       // ========== 策略1：Slug 直接搜索 (最可靠) ==========
       // Polymarket slug 格式: nba-{away_abbr}-{home_abbr}-{date} 或 nba-{home_abbr}-{away_abbr}-{date}
       // 例如: nba-atl-tor-2026-01-05
+      // 注意：由于时区差异（服务器 UTC vs 美东时间），需要尝试多个日期
       const today = new Date();
-      const dateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      const dateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD (UTC)
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
       
       const homeAbbr = homeTeamMapping.abbr.toLowerCase();
       const awayAbbr = awayTeamMapping.abbr.toLowerCase();
       
-      // 尝试两种可能的 slug 格式（主客场顺序不确定）
+      // 尝试今天和昨天的日期（因为时区差异，今天 UTC 的比赛可能对应美东时间昨天/今天）
+      // 优先匹配今天的日期
       const possibleSlugs = [
         `nba-${homeAbbr}-${awayAbbr}-${dateStr}`,
         `nba-${awayAbbr}-${homeAbbr}-${dateStr}`,
-        `nba-${homeAbbr}-${awayAbbr}-${tomorrowStr}`,
-        `nba-${awayAbbr}-${homeAbbr}-${tomorrowStr}`,
+        `nba-${homeAbbr}-${awayAbbr}-${yesterdayStr}`,
+        `nba-${awayAbbr}-${homeAbbr}-${yesterdayStr}`,
       ];
       
       logger.debug(`[Slug Search] 尝试 slug 搜索: ${possibleSlugs.join(' | ')}`);
@@ -942,7 +944,8 @@ class PolymarketService {
           
           if (slugResponse.data && slugResponse.data.length > 0) {
             const event = slugResponse.data[0];
-            if (event.active && !event.closed) {
+            // 只检查 active 状态，不再过滤 closed（进行中的比赛可能被错误标记）
+            if (event.active) {
               logger.info(`[Slug Search] ✅ 找到比赛 (slug=${slug}): ${event.title}`);
               slugFoundEvent = event;
               break;

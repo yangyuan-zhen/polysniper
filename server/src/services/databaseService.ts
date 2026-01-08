@@ -469,6 +469,67 @@ class DatabaseService {
   }
 
   /**
+   * 更新订单平仓信息（不覆盖进场数据）
+   * 用于平仓时更新订单状态，只更新出场相关字段，保留进场时记录的数据
+   */
+  async updatePaperOrderOnClose(orderId: string, closeData: {
+    exitPrice: number;
+    currentPrice: number;
+    pnl: number;
+    pnlPercent: number;
+    // 卖出时战场情况
+    exitHomeScore?: number;
+    exitAwayScore?: number;
+    exitScoreDiff?: number;
+    exitEspnProb?: number;
+    exitPolyPrice?: number;
+    exitMatchStatus?: string;
+    exitQuarter?: string;
+    exitTimeRemaining?: string;
+    exitReason?: string;
+  }): Promise<void> {
+    const sql = `
+      UPDATE paper_orders SET
+        status = 'CLOSED',
+        exit_price = ?,
+        current_price = ?,
+        pnl = ?,
+        pnl_percent = ?,
+        exit_home_score = ?,
+        exit_away_score = ?,
+        exit_score_diff = ?,
+        exit_espn_prob = ?,
+        exit_poly_price = ?,
+        exit_match_status = ?,
+        exit_quarter = ?,
+        exit_time_remaining = ?,
+        exit_reason = ?,
+        closed_at = ?
+      WHERE id = ?
+    `;
+
+    const params = [
+      closeData.exitPrice,
+      closeData.currentPrice,
+      closeData.pnl,
+      closeData.pnlPercent,
+      closeData.exitHomeScore,
+      closeData.exitAwayScore,
+      closeData.exitScoreDiff,
+      closeData.exitEspnProb,
+      closeData.exitPolyPrice,
+      closeData.exitMatchStatus,
+      closeData.exitQuarter,
+      closeData.exitTimeRemaining,
+      closeData.exitReason || '比赛结束自动平仓',
+      new Date().toISOString(),
+      orderId
+    ];
+
+    await this.runQuery(sql, params);
+  }
+
+  /**
    * 保存/更新持仓
    */
   async savePaperPosition(position: {

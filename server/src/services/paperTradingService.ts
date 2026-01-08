@@ -426,26 +426,16 @@ class PaperTradingService {
     // 移除持仓
     this.positions.delete(positionKey);
 
-    // 💾 更新订单到数据库（包含离场战场情况）
-    await databaseService.savePaperOrder({
-      id: order.id,
-      matchId: order.matchId,
-      team: order.team,
-      tokenId: order.tokenId,
-      orderType: 'BUY',
-      status: 'CLOSED',
-      quantity: order.quantity,
-      entryPrice: order.entryPrice,
+    // 💾 更新订单到数据库（使用 UPDATE 而非 INSERT OR REPLACE，保留进场数据）
+    await databaseService.updatePaperOrderOnClose(order.id, {
       exitPrice: exitPrice,
       currentPrice: exitPrice,
       pnl: pnl,
       pnlPercent: pnlPercent,
-      confidence: order.confidence,
-      reason: order.reason,
       // 离场时的战场情况
       exitHomeScore: exitContext?.homeScore,
       exitAwayScore: exitContext?.awayScore,
-      exitScoreDiff: exitContext?.homeScore && exitContext?.awayScore 
+      exitScoreDiff: exitContext?.homeScore !== undefined && exitContext?.awayScore !== undefined 
         ? exitContext.homeScore - exitContext.awayScore 
         : undefined,
       exitEspnProb: exitContext?.espnProb,

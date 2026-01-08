@@ -165,7 +165,15 @@ export function MatchCard({ match }: MatchCardProps) {
 
         {/* Polymarket 价格 - Bid/Ask 显示 */}
         <div className="mb-3">
-          {dataCompleteness.hasPolyData ? (
+          {/* 已结束的比赛不显示价格（因为数据可能陈旧） */}
+          {status === 'FINAL' ? (
+            <div className="bg-gray-500/10 rounded-lg p-2.5 border border-gray-500/20">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-gray-400" />
+                <span className="text-xs text-gray-400">比赛已结束，Polymarket 数据不再更新</span>
+              </div>
+            </div>
+          ) : dataCompleteness.hasPolyData ? (
             <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-lg p-3 border border-purple-500/20">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-semibold text-purple-300">Polymarket 交易价格</span>

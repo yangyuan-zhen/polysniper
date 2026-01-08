@@ -17,6 +17,9 @@ services:
       - POLYMARKET_WS_PROXY=${POLYMARKET_WS_PROXY:-none}
     env_file:
       - .env
+    volumes:
+      # 持久化 SQLite 数据库，防止容器重建时数据丢失
+      - server_data:/app/server/data
     depends_on:
       - redis
     restart: always
@@ -47,6 +50,7 @@ services:
 
 volumes:
   redis_data:
+  server_data:  # SQLite 数据库持久化
 
 networks:
   app-network:

@@ -62,3 +62,6 @@ dump.rdb
 *.db
 **/data/
 server/data/
+
+# Agent
+.agent/

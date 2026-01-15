@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { Header } from './components/Header';
 import { MatchCard } from './components/MatchCard';
-import { ColorGuide } from './components/ColorGuide';
+const ColorGuide = lazy(() => import('./components/ColorGuide').then(module => ({ default: module.ColorGuide })));
 import { websocketService } from './services/websocket';
 import { fetchMatches } from './services/api';
 import type { UnifiedMatch } from './types/backend';
@@ -382,7 +382,9 @@ function App() {
           </button>
         </div>
         <div className="p-6">
-          <ColorGuide isExpanded={true} onToggle={() => {}} />
+          <Suspense fallback={<div className="text-gray-400 text-center py-4">加载策略说明...</div>}>
+            <ColorGuide isExpanded={true} onToggle={() => {}} />
+          </Suspense>
         </div>
       </div>
 

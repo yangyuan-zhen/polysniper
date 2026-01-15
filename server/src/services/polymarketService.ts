@@ -265,7 +265,7 @@ class PolymarketService {
       const now = Date.now();
       
       // 遍历所有已订阅的资产，获取最新订单簿
-      for (const assetId of this.subscribedAssets) {
+      const pollingPromises = Array.from(this.subscribedAssets).map(async (assetId) => {
         // 优化：如果 WebSocket 最近有更新（2秒内）且缓存中有完整的买卖价，则跳过 REST API 轮询
         const lastUpdate = this.lastWsTime.get(assetId) || 0;
         const cached = this.priceCache.get(assetId);
@@ -273,32 +273,31 @@ class PolymarketService {
         
         if (now - lastUpdate < 2000 && hasFullData) {
           // WebSocket 活跃且数据完整，跳过轮询
-          continue;
+          return;
         }
         
-      try {
-        // 使用 getMidpoint 替代 getOrderBook，避免 Ghost Market 数据
-        const midPrice = await this.getMidpoint(assetId);
-        
-        if (midPrice !== null) {
-          // 只更新中间价，不更新 Bid/Ask (因为 REST API 的 OrderBook 不可靠)
-          // Bid/Ask 将完全依赖 WebSocket 推送
-          this.updatePrice(assetId, {
-            price: midPrice,
-            bestBid: null, // 保持现有值 (在 updatePrice 中处理)
-            bestAsk: null  // 保持现有值
-          });
+        try {
+          // 使用 getMidpoint 替代 getOrderBook，避免 Ghost Market 数据
+          const midPrice = await this.getMidpoint(assetId);
+          
+          if (midPrice !== null) {
+            // 只更新中间价，不更新 Bid/Ask (因为 REST API 的 OrderBook 不可靠)
+            // Bid/Ask 将完全依赖 WebSocket 推送
+            this.updatePrice(assetId, {
+              price: midPrice,
+              bestBid: null, // 保持现有值 (在 updatePrice 中处理)
+              bestAsk: null  // 保持现有值
+            });
+          }
+        } catch (error) {
+          // 忽略单个查询错误
         }
-      } catch (error) {
-        // 忽略单个查询错误
-      }
-    }
-  }, 1000);
+      });
+
+      await Promise.all(pollingPromises);
+    }, 1000);
   }
 
-  /**
-   * 停止 REST API 轮询
-   */
   private stopPolling(): void {
     if (this.pollingInterval) {
       clearInterval(this.pollingInterval);
@@ -505,7 +504,7 @@ class PolymarketService {
       const midPrice = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : lastTradePrice;
       
       if (midPrice) {
-        logger.info(`📖 订单簿 [${asset_id.slice(0, 8)}...]: Mid=$${midPrice.toFixed(4)}, Bid=$${bestBid?.toFixed(4) || 'N/A'}, Ask=$${bestAsk?.toFixed(4) || 'N/A'}`);
+        logger.debug(`📖 订单簿 [${asset_id.slice(0, 8)}...]: Mid=$${midPrice.toFixed(4)}, Bid=$${bestBid?.toFixed(4) || 'N/A'}, Ask=$${bestAsk?.toFixed(4) || 'N/A'}`);
         this.lastWsTime.set(asset_id, Date.now()); // 记录 WS 更新时间
         this.updatePrice(asset_id, { price: midPrice, bestBid, bestAsk });
       }
@@ -520,7 +519,7 @@ class PolymarketService {
         const midPrice = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : price;
         
         if (asset_id && midPrice) {
-          logger.info(`📈 价格更新 [${asset_id.slice(0, 8)}...]: Mid=$${midPrice.toFixed(4)}, Bid=$${bestBid?.toFixed(4) || 'N/A'}, Ask=$${bestAsk?.toFixed(4) || 'N/A'} (${change.side})`);
+          logger.debug(`📈 价格更新 [${asset_id.slice(0, 8)}...]: Mid=$${midPrice.toFixed(4)}, Bid=$${bestBid?.toFixed(4) || 'N/A'}, Ask=$${bestAsk?.toFixed(4) || 'N/A'} (${change.side})`);
           this.lastWsTime.set(asset_id, Date.now()); // 记录 WS 更新时间
           this.updatePrice(asset_id, { price: midPrice, bestBid, bestAsk });
         }

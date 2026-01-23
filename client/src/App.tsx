@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { Header } from './components/Header';
 import { MatchCard } from './components/MatchCard';
+import { PaperTradingPanel } from './components/PaperTradingPanel';
 const ColorGuide = lazy(() => import('./components/ColorGuide').then(module => ({ default: module.ColorGuide })));
 import { websocketService } from './services/websocket';
 import { fetchMatches } from './services/api';
@@ -216,7 +217,10 @@ function App() {
       {/* Header */}
       <div className="border-b border-white/5 bg-surface/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-[1920px] mx-auto px-6 py-4">
-          <Header />
+          <div className="flex items-center justify-between gap-4">
+            <Header />
+            <PaperTradingPanel />
+          </div>
         </div>
       </div>
 

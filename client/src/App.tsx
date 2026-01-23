@@ -214,14 +214,14 @@ function App() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="border-b border-white/5 bg-surface/50 backdrop-blur-sm sticky top-0 z-40">
+      <div className="border-b border-white/5 bg-surface/50 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-[1920px] mx-auto px-6 py-4">
           <Header />
         </div>
       </div>
 
       {/* Stats & Filter Bar */}
-      <div className="border-b border-white/5 bg-surface/30 backdrop-blur-sm sticky top-[72px] z-30">
+      <div className="border-b border-white/5 bg-surface/30 backdrop-blur-sm sticky top-[72px] z-40">
         <div className="max-w-[1920px] mx-auto px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             {/* Stats */}
@@ -366,7 +366,7 @@ function App() {
       </div>
 
       {/* Right Drawer - Strategy Guide */}
-      <div className={`fixed inset-y-0 right-0 w-[480px] bg-surface border-l border-white/10 transform transition-transform duration-300 z-50 overflow-y-auto ${
+      <div className={`fixed inset-y-0 right-0 w-[480px] bg-surface border-l border-white/10 transform transition-transform duration-300 z-30 overflow-y-auto ${
         isGuideOpen ? 'translate-x-0' : 'translate-x-full'
       }`}>
         <div className="sticky top-0 bg-surface/95 backdrop-blur-sm border-b border-white/10 p-6 flex items-center justify-between z-10">
@@ -391,7 +391,7 @@ function App() {
       {/* Overlay */}
       {isGuideOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 transition-opacity"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-20 transition-opacity"
           onClick={() => setIsGuideOpen(false)}
         />
       )}

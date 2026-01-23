@@ -5,6 +5,7 @@ WORKDIR /app
 # 1. 构建 shared 模块
 COPY shared ./shared
 WORKDIR /app/shared
+RUN npm config set registry https://registry.npmmirror.com
 RUN npm install
 RUN npm run build
 
@@ -12,6 +13,7 @@ RUN npm run build
 WORKDIR /app
 COPY client ./client
 WORKDIR /app/client
+RUN npm config set registry https://registry.npmmirror.com
 RUN npm install
 # 临时修改构建命令，跳过 TypeScript 类型检查（节省内存，避免报错）
 RUN sed -i 's/"build": "tsc -b && vite build"/"build": "vite build"/' package.json

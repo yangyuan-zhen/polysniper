@@ -16,6 +16,9 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          timeout: 30s
+          command_timeout: 30m
+          script_stop: true
           script: |
             # 进入项目目录
             cd /root/polysniper

@@ -12,8 +12,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      '@shared/types': '@polysniper/shared-types',
+      '@shared/types': path.resolve(__dirname, '../shared/types/index.ts'),
     },
+    preserveSymlinks: true,
   },
   server: {
     port: 5173,

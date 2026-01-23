@@ -14,7 +14,7 @@ git pull origin main
 # -d: 后台运行
 # --remove-orphans: 清理未定义的容器
 echo "🏗️ 正在构建并启动容器..."
-docker-compose up -d --build --remove-orphans
+docker compose up -d --build --remove-orphans
 
 # 3. 清理未使用的镜像（释放磁盘空间）
 echo "🧹 清理旧镜像..."

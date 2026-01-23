@@ -96,6 +96,10 @@ export interface ArbitrageSignal {
     priceDiff: number;     // 价格差异
     scoreDiff: number;     // 比分差异
     timeRemaining: string; // 剩余时间
+    // 新增：无风险套利相关字段
+    awayPrice?: number;    // 客队价格
+    totalProb?: number;    // 总概率
+    arbitrageMargin?: number; // 套利空间
   };
 }
 
@@ -177,6 +181,27 @@ export interface Order {
   confidence: number;            // 信号置信度
   timestamp: number;             // 开仓时间
   closeTimestamp?: number;       // 平仓时间
+  
+  // 战场情况快照（买入时）
+  entryHomeScore?: number;
+  entryAwayScore?: number;
+  entryScoreDiff?: number;
+  entryEspnProb?: number;
+  entryPolyPrice?: number;
+  entryMatchStatus?: string;
+  entryQuarter?: string;
+  entryTimeRemaining?: string;
+  
+  // 战场情况快照（卖出时）
+  exitHomeScore?: number;
+  exitAwayScore?: number;
+  exitScoreDiff?: number;
+  exitEspnProb?: number;
+  exitPolyPrice?: number;
+  exitMatchStatus?: string;
+  exitQuarter?: string;
+  exitTimeRemaining?: string;
+  exitReason?: string;
 }
 
 /** 持仓记录 */

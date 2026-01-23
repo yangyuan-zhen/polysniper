@@ -6,20 +6,14 @@ import { fileURLToPath } from 'url'
 
 import fs from 'fs'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-// 动态解析 shared 目录：优先使用 Docker 构建时复制进来的本地目录
-const localSharedPath = path.resolve(__dirname, './src/shared')
-const siblingSharedPath = path.resolve(__dirname, '../shared/types')
-const sharedPath = fs.existsSync(localSharedPath) ? localSharedPath : siblingSharedPath
-
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      '@shared/types': path.resolve(sharedPath, 'index.ts'),
+      // 直接指向 node_modules 中的源码文件
+      // 由于是 file: 协议安装的依赖，npm 会创建软链接，所以可以访问到源码
+      '@shared/types': path.resolve(__dirname, 'node_modules/@polysniper/shared-types/types/index.ts'),
     },
     preserveSymlinks: true,
   },

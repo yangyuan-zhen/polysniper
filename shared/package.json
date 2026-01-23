@@ -2,8 +2,8 @@
   "name": "@polysniper/shared-types",
   "version": "1.0.0",
   "description": "Shared TypeScript types for PolySniper frontend and backend",
-  "main": "dist/types/index.js",
-  "types": "dist/types/index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",

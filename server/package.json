@@ -33,8 +33,7 @@
   "author": "",
   "license": "ISC",
   "_moduleAliases": {
-    "@shared": "../shared",
-    "@shared/types": "../shared/dist/types"
+    "@shared/types": "../shared"
   },
   "dependencies": {
     "@polysniper/shared-types": "file:../shared",

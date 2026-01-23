@@ -23,7 +23,11 @@ jobs:
             # 进入项目目录
             cd /root/polysniper
 
-            # 先拉取最新代码（确保 deploy.sh 存在）
+            # 强制重置本地修改，确保与远程仓库一致
+            git fetch --all
+            git reset --hard origin/main
+
+            # 拉取最新代码
             git pull origin main
 
             # 给脚本添加执行权限

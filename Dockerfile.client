@@ -12,8 +12,6 @@ RUN npm run build
 # 2. 构建 client 模块
 WORKDIR /app
 COPY client ./client
-# 关键修复：将 shared/types 直接复制到 client/src 下，绕过软链接和路径问题
-COPY shared/types ./client/src/shared
 WORKDIR /app/client
 RUN npm config set fetch-retry-maxtimeout 600000 && npm config set fetch-retry-mintimeout 10000
 RUN npm install

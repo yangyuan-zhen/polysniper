@@ -1,37 +1,77 @@
-name: Deploy to VPS
+name: Build and Deploy
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Server image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.server
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-server:latest
+
+      - name: Build and push Client image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.client
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-client:latest
+
   deploy:
+    needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy via SSH
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}
-          port: ${{ secrets.VPS_PORT || 22 }}
+          port: 22
           timeout: 30s
           command_timeout: 30m
-          script_stop: true
           script: |
-            # 进入项目目录
             cd /root/polysniper
-
-            # 强制重置本地修改，确保与远程仓库一致
+            
+            # 拉取最新代码（获取 docker-compose.yml 更新）
             git fetch --all
             git reset --hard origin/main
-
-            # 拉取最新代码
-            git pull origin main
-
-            # 给脚本添加执行权限
-            chmod +x deploy.sh
-
-            # 执行部署脚本
-            ./deploy.sh
+            
+            # 拉取最新镜像
+            docker pull ghcr.io/yangyuan-zhen/polysniper-server:latest
+            docker pull ghcr.io/yangyuan-zhen/polysniper-client:latest
+            
+            # 重启容器
+            docker compose down
+            docker compose up -d
+            
+            # 清理旧镜像
+            docker image prune -f
+            
+            echo "✅ 部署完成！"

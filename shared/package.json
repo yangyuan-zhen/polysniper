@@ -10,7 +10,8 @@
     "clean": "rm -rf dist"
   },
   "files": [
-    "dist"
+    "dist",
+    "types"
   ],
   "devDependencies": {
     "typescript": "^5.3.3"

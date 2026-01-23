@@ -12,7 +12,11 @@ interface PaperTradingData {
   openOrders: any[];
 }
 
-export function PaperTradingPanel() {
+interface PaperTradingPanelProps {
+  onClick?: () => void;
+}
+
+export function PaperTradingPanel({ onClick }: PaperTradingPanelProps) {
   const [data, setData] = useState<PaperTradingData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -53,7 +57,10 @@ export function PaperTradingPanel() {
   const isProfitable = data.totalPnl >= 0;
 
   return (
-    <div className="flex items-center gap-4">
+    <div 
+      className="flex items-center gap-4 cursor-pointer hover:opacity-80 transition-opacity"
+      onClick={onClick}
+    >
       {/* 账户余额 */}
       <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2 border border-white/10">
         <Wallet className="w-4 h-4 text-purple-400" />

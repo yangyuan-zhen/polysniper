@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { Header } from './components/Header';
 import { MatchCard } from './components/MatchCard';
 import { PaperTradingPanel } from './components/PaperTradingPanel';
+import { TradeHistory } from './components/TradeHistory';
 const ColorGuide = lazy(() => import('./components/ColorGuide').then(module => ({ default: module.ColorGuide })));
 import { websocketService } from './services/websocket';
 import { fetchMatches } from './services/api';
 import type { UnifiedMatch } from './types/backend';
-import { Info, X } from 'lucide-react';
+import { Info, X, History as HistoryIcon } from 'lucide-react';
 
 type FilterType = 'all' | 'signals' | 'live';
 
@@ -16,6 +17,7 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [filter, setFilter] = useState<FilterType>('all');
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   // 筛选和排序
   const filteredAndSortedMatches = useMemo(() => {
@@ -219,7 +221,7 @@ function App() {
         <div className="max-w-[1920px] mx-auto px-6 py-4">
           <div className="flex items-center justify-between gap-4">
             <Header />
-            <PaperTradingPanel />
+            <PaperTradingPanel onClick={() => setShowHistory(true)} />
           </div>
         </div>
       </div>
@@ -301,6 +303,14 @@ function App() {
               >
                 <Info className="w-4 h-4" />
                 <span>策略说明</span>
+              </button>
+
+              <button
+                onClick={() => setShowHistory(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 rounded-lg text-sm font-medium transition-all border border-blue-500/20"
+              >
+                <HistoryIcon className="w-4 h-4" />
+                <span>交易历史</span>
               </button>
               
               <div className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg">
@@ -398,6 +408,11 @@ function App() {
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-20 transition-opacity"
           onClick={() => setIsGuideOpen(false)}
         />
+      )}
+
+      {/* Trade History View */}
+      {showHistory && (
+        <TradeHistory onClose={() => setShowHistory(false)} />
       )}
 
     </div>

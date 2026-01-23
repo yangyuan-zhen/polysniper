@@ -220,6 +220,54 @@ export function ColorGuide({ isExpanded, onToggle }: ColorGuideProps) {
                   </div>
                 </div>
               </div>
+
+              {/* 无风险套利策略 */}
+              <div className="mt-4 pt-4 border-t border-white/5">
+                <h4 className="text-sm font-semibold text-green-400 mb-3 flex items-center gap-2">
+                  <span>🔒</span>
+                  <span>无风险套利机制</span>
+                </h4>
+                
+                <div className="space-y-3 text-xs">
+                  {/* 核心理念 */}
+                  <div className="bg-gradient-to-br from-green-500/20 to-blue-500/10 border-2 border-green-500/40 rounded-lg p-3">
+                    <div className="font-semibold text-green-300 mb-2 flex items-center gap-2">
+                      <span>🛡️</span>
+                      <span>核心理念：价格倒挂套利</span>
+                    </div>
+                    <div className="space-y-1.5 text-gray-300 leading-relaxed">
+                      <p className="text-white font-semibold">当市场出现定价错误，买入所有可能结果的总成本 &lt; 1.0</p>
+                      <div className="bg-black/30 rounded p-2 space-y-1">
+                        <p className="text-xs text-gray-400">原理：无论谁赢，Polymarket 都会赔付 $1.0</p>
+                        <p className="text-green-300">💰 如果我们能用 $0.93 买入 $1.0 的兑付权，就锁定了 7% 的无风险收益</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 触发条件 */}
+                  <div className="bg-blue-500/10 border-2 border-blue-500/30 rounded-lg p-3">
+                    <div className="font-semibold text-blue-400 mb-2 flex items-center gap-2">
+                      <span>⚡</span>
+                      <span>触发条件</span>
+                    </div>
+                    <div className="space-y-2 text-gray-300">
+                      <div className="bg-black/30 rounded p-2">
+                        <p className="text-center text-lg text-white font-mono">
+                          <span className="text-green-400">主队卖价(Ask)</span> + <span className="text-red-400">客队卖价(Ask)</span> &lt; <span className="text-yellow-400">0.95</span>
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-blue-500">•</span>
+                        <span>不依赖比赛状态，<span className="font-semibold text-white">未开始(PRE)</span> 的比赛也能触发</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-blue-500">•</span>
+                        <span>不依赖 ESPN 胜率，纯粹的市场定价错误</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

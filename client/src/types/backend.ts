@@ -4,6 +4,10 @@
 // 这个文件引用共享类型，并添加前端特有的类型定义
 
 // 导入所有共享类型
+import { SignalType, MatchStatus } from '../../../shared/types/index';
+import type { UnifiedMatch, ArbitrageSignal } from '../../../shared/types/index';
+
+// 导出所有共享类型
 export * from '../../../shared/types/index';
 
 // =============================================================================

@@ -12,12 +12,14 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      '@shared': path.resolve(__dirname, '../shared'),
       '@shared/types': path.resolve(__dirname, '../shared/types'),
     },
   },
   server: {
     port: 5173,
+    fs: {
+      allow: ['..'],
+    },
     proxy: {
       // 代理后端 API 请求
       '/api': {
@@ -31,6 +33,9 @@ export default defineConfig({
         ws: true, // 启用 WebSocket 代理
       },
     },
+  },
+  optimizeDeps: {
+    exclude: ['@shared/types'],
   },
   build: {
     rollupOptions: {

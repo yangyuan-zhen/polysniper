@@ -3,12 +3,13 @@
 // =============================================================================
 // 这个文件引用共享类型，并添加前端特有的类型定义
 
-// 导入所有共享类型
-import { SignalType, MatchStatus } from '@shared/types';
-import type { UnifiedMatch, ArbitrageSignal } from '@shared/types';
+// 导入所有共享类型（Docker 中使用 ../shared-types，本地使用 ../shared-types 或 @shared/types）
+// 注意：在 Docker 构建中，shared/types 会被复制到 src/shared-types
+import { SignalType, MatchStatus } from '../shared-types';
+import type { UnifiedMatch, ArbitrageSignal } from '../shared-types';
 
 // 导出所有共享类型
-export * from '@shared/types';
+export * from '../shared-types';
 
 // =============================================================================
 // 前端特有类型（不与后端共享）

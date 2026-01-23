@@ -65,3 +65,6 @@ server/data/
 
 # Agent
 .agent/
+
+# Shared types symlink (Docker copies the actual files)
+client/src/shared-types/

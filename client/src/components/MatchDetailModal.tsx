@@ -1,5 +1,5 @@
 import { X, TrendingUp, TrendingDown, Activity } from 'lucide-react';
-import type { UnifiedMatch } from '@shared/types';
+import type { UnifiedMatch } from '../shared-types';
 
 interface MatchDetailModalProps {
   match: UnifiedMatch | null;

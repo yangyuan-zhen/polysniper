@@ -170,4 +170,28 @@ router.get('/api/stats', (req, res) => {
   }
 });
 
+/**
+ * 获取模拟盘数据
+ */
+router.get('/api/papertrading', (req, res) => {
+  try {
+    const paperStatus = dataAggregator.getPaperTradingStatus();
+
+    res.json({
+      success: true,
+      data: paperStatus,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: error.message,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 export default router;

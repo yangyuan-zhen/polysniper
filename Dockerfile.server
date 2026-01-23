@@ -6,7 +6,7 @@ WORKDIR /app
 COPY shared ./shared
 WORKDIR /app/shared
 # 使用 npm install 而不是 ci，因为可能没有 package-lock.json
-RUN npm config set registry https://registry.npmmirror.com
+RUN npm config set fetch-retry-maxtimeout 600000 && npm config set fetch-retry-mintimeout 10000
 RUN npm install
 RUN npm run build
 
@@ -14,7 +14,7 @@ RUN npm run build
 WORKDIR /app
 COPY server ./server
 WORKDIR /app/server
-RUN npm config set registry https://registry.npmmirror.com
+RUN npm config set fetch-retry-maxtimeout 600000 && npm config set fetch-retry-mintimeout 10000
 RUN npm install
 RUN npm run build
 

@@ -9,13 +9,16 @@ echo "🚀 开始部署流程..."
 echo "📥 正在拉取最新代码..."
 git pull origin main
 
-# 2. 重新构建并启动容器
-# --build: 强制重新构建镜像
-# -d: 后台运行
-# --remove-orphans: 清理未定义的容器
-echo "🏗️ 正在构建并启动容器..."
-# 禁用 BuildKit 以解决构建时的网络问题
-DOCKER_BUILDKIT=0 docker compose up -d --build --remove-orphans
+# 2. 单独构建镜像（使用host网络模式解决网络问题）
+echo "🏗️ 正在构建 server 镜像..."
+docker build --network=host -t polysniper-server -f Dockerfile.server .
+
+echo "🏗️ 正在构建 client 镜像..."
+docker build --network=host -t polysniper-client -f Dockerfile.client .
+
+# 3. 启动容器（不需要再构建）
+echo "🚀 正在启动容器..."
+docker compose up -d --remove-orphans
 
 # 3. 清理未使用的镜像（释放磁盘空间）
 echo "🧹 清理旧镜像..."

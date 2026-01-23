@@ -3,19 +3,19 @@ import react from '@vitejs/plugin-react-swc'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import fs from 'fs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 // 检测是否在 Docker 构建环境中
-// Docker 中：shared 类型被复制到 src/shared-types
+// Docker 中：通过环境变量 DOCKER_BUILD=true，shared 类型被复制到 src/shared-types
 // 本地开发：shared 类型在 ../shared/types
-const dockerSharedPath = path.resolve(__dirname, 'src/shared-types/index.ts')
-const localSharedPath = path.resolve(__dirname, '../shared/types/index.ts')
-const sharedTypesPath = fs.existsSync(dockerSharedPath) ? dockerSharedPath : localSharedPath
+const isDockerBuild = process.env.DOCKER_BUILD === 'true'
+const sharedTypesPath = isDockerBuild
+  ? path.resolve(__dirname, 'src/shared-types')
+  : path.resolve(__dirname, '../shared/types')
 
-console.log('[Vite Config] Using shared types from:', sharedTypesPath)
+console.log(`[Vite Config] Docker build: ${isDockerBuild}, shared types from: ${sharedTypesPath}`)
 
 // https://vite.dev/config/
 export default defineConfig({

@@ -24,6 +24,9 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 # 设置环境变量，让 vite.config.ts 知道这是 Docker 构建环境
 ENV DOCKER_BUILD=true
 
+# 使用 Docker 专用的 tsconfig（路径指向 src/shared-types 而非 ../shared/types）
+RUN cp tsconfig.docker.json tsconfig.app.json
+
 # 构建项目
 RUN npm run build
 

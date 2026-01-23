@@ -12,7 +12,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      '@shared/types': path.resolve(__dirname, '../shared/types'),
+      '@shared/types': path.resolve(__dirname, '../shared/types/index.ts'),
     },
   },
   server: {

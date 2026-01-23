@@ -16,8 +16,11 @@ WORKDIR /app/client
 RUN npm config set fetch-retry-maxtimeout 600000 && npm config set fetch-retry-mintimeout 10000
 RUN npm install
 # 临时修改构建命令，跳过 TypeScript 类型检查（节省内存，避免报错）
-# 直接使用 vite build 构建，跳过 tsc 检查
-RUN npx vite build
+# 增加内存限制，防止构建时 OOM
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+
+# 构建项目
+RUN npm run build
 
 # 3. Nginx 托管
 FROM nginx:alpine

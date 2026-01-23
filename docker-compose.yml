@@ -3,9 +3,7 @@ version: '3.8'
 services:
   # 后端服务
   server:
-    build:
-      context: .
-      dockerfile: Dockerfile.server
+    image: ghcr.io/yangyuan-zhen/polysniper-server:latest
     ports:
       - "3000:3000"
     environment:
@@ -28,9 +26,7 @@ services:
 
   # 前端服务 (Nginx)
   client:
-    build:
-      context: .
-      dockerfile: Dockerfile.client
+    image: ghcr.io/yangyuan-zhen/polysniper-client:latest
     ports:
       - "80:80"
     depends_on:

@@ -23,7 +23,10 @@ jobs:
             # 进入项目目录
             cd /root/polysniper
 
-            # 给脚本添加执行权限（如果还没有的话）
+            # 先拉取最新代码（确保 deploy.sh 存在）
+            git pull origin main
+
+            # 给脚本添加执行权限
             chmod +x deploy.sh
 
             # 执行部署脚本

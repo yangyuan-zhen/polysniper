@@ -1,4 +1,4 @@
-import type { UnifiedMatch } from '@shared/types';
+import type { UnifiedMatch } from '../shared-types';
 import { TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 
 // ESPN 风格胜率条

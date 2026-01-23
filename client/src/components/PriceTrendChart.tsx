@@ -233,7 +233,7 @@ export function PriceTrendChart() {
               }}
               labelStyle={{ color: '#9ca3af' }}
               itemStyle={{ color: '#3b82f6' }}
-              formatter={(value: number) => [`${value.toFixed(1)}¢`, '价格']}
+              formatter={(value: number | undefined) => [value ? `${value.toFixed(1)}¢` : '0.0¢', '价格']}
             />
             <Area 
               type="monotone" 

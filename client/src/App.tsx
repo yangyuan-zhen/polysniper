@@ -380,7 +380,7 @@ function App() {
       </div>
 
       {/* Right Drawer - Strategy Guide */}
-      <div className={`fixed inset-y-0 right-0 w-[480px] bg-surface border-l border-white/10 transform transition-transform duration-300 z-30 overflow-y-auto ${
+      <div className={`fixed inset-y-0 right-0 w-[480px] bg-surface border-l border-white/10 transform transition-transform duration-300 z-[60] overflow-y-auto ${
         isGuideOpen ? 'translate-x-0' : 'translate-x-full'
       }`}>
         <div className="sticky top-0 bg-surface/95 backdrop-blur-sm border-b border-white/10 p-6 flex items-center justify-between z-10">
@@ -405,7 +405,7 @@ function App() {
       {/* Overlay */}
       {isGuideOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-20 transition-opacity"
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55] transition-opacity"
           onClick={() => setIsGuideOpen(false)}
         />
       )}

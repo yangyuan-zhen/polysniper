@@ -21,14 +21,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
-
-    /* Path mapping */
-    "baseUrl": ".",
-    "paths": {
-      "@shared/types": ["../shared/types"],
-      "@shared/*": ["../shared/*"]
-    }
+    "noUncheckedSideEffectImports": true
   },
-  "include": ["src", "../shared/types"]
+  "include": ["src"]
 }

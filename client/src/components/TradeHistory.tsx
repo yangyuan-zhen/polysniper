@@ -253,6 +253,9 @@ export function TradeHistory({ onClose }: TradeHistoryProps) {
                         <div className="text-xs text-gray-500 truncate max-w-[200px]">
                           {order.reason}
                         </div>
+                        <div className="text-xs text-gray-600 font-mono truncate max-w-[200px]" title={order.matchId}>
+                          🔗 {order.matchId?.slice(0, 20)}...
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${

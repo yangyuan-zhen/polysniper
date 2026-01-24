@@ -130,316 +130,132 @@ class PaperTradingService {
     try {
       await this.ensureInitialized();
 
-      // 🔒 检测是否为无风险套利信号（通过 signal.details 中的 arbitrageMargin）
-      const isArbitrage = signal.details?.arbitrageMargin !== undefined && signal.details.arbitrageMargin > 0;
+      // 📈 单边买入：根据 ESPN vs Polymarket 价格差异买入
+      let team: string;
+      let tokenId: string;
+      let price: number;
+      let espnProb: number | undefined;
 
-      if (isArbitrage) {
-        // 🎯 无风险套利：同时买入主队和客队
-        logger.info(`🔒 [Paper Trading] 检测到无风险套利机会！`);
-        logger.info(`   📍 MatchID: ${matchId}`);
-        logger.info(`   套利空间: ${(signal.details.arbitrageMargin! * 100).toFixed(2)}%`);
-        logger.info(`   主队 ${homeTeam}: $${(homeBestAsk || homeMidPrice).toFixed(4)} (Token: ${homeTokenId?.slice(0, 16)}...)`);
-        logger.info(`   客队 ${awayTeam}: $${(awayBestAsk || awayMidPrice).toFixed(4)} (Token: ${awayTokenId?.slice(0, 16)}...)`);
-
-        const homePrice = homeBestAsk || homeMidPrice;
-        const awayPrice = awayBestAsk || awayMidPrice;
-
-        // 计算等额投入（每边投入50%资金的5%，即总共10%仓位）
-        const totalPositionSize = this.balance * 0.10; // 总仓位10%
-        const homeInvestment = totalPositionSize / 2; // 主队投入50%
-        const awayInvestment = totalPositionSize / 2; // 客队投入50%
-
-        const homeQuantity = homeInvestment / homePrice;
-        const awayQuantity = awayInvestment / awayPrice;
-
-        const totalCost = homeInvestment + awayInvestment;
-
-        // 检查余额
-        if (totalCost > this.balance) {
-          logger.warn(`[Paper Trading] 余额不足: 需要 $${totalCost.toFixed(2)}, 可用 $${this.balance.toFixed(2)}`);
-          return null;
-        }
-
-        // 检查是否已有持仓
-        const homePositionKey = `${matchId}-${homeTokenId}`;
-        const awayPositionKey = `${matchId}-${awayTokenId}`;
-        if (this.positions.has(homePositionKey) || this.positions.has(awayPositionKey)) {
-          logger.debug(`[Paper Trading] 已有持仓，跳过套利`);
-          return null;
-        }
-
-        // 扣除余额
-        this.balance -= totalCost;
-
-        // 买入主队
-        const homeOrder: Order = {
-          id: `ORD${String(this.orderIdCounter++).padStart(6, '0')}`,
-          matchId,
-          type: OrderType.BUY,
-          status: OrderStatus.FILLED,
-          team: homeTeam,
-          tokenId: homeTokenId,
-          quantity: homeQuantity,
-          entryPrice: homePrice,
-          currentPrice: homePrice,
-          pnl: 0,
-          pnlPercent: 0,
-          reason: `🔒 套利-主队: ${signal.reason}`,
-          confidence: signal.confidence,
-          timestamp: Date.now(),
-        };
-
-        this.orders.set(homeOrder.id, homeOrder);
-        this.positions.set(homePositionKey, {
-          matchId,
-          team: homeTeam,
-          tokenId: homeTokenId,
-          quantity: homeQuantity,
-          avgCost: homePrice,
-          currentPrice: homePrice,
-          unrealizedPnl: 0,
-          unrealizedPnlPercent: 0,
-        });
-
-        // 买入客队
-        const awayOrder: Order = {
-          id: `ORD${String(this.orderIdCounter++).padStart(6, '0')}`,
-          matchId,
-          type: OrderType.BUY,
-          status: OrderStatus.FILLED,
-          team: awayTeam,
-          tokenId: awayTokenId,
-          quantity: awayQuantity,
-          entryPrice: awayPrice,
-          currentPrice: awayPrice,
-          pnl: 0,
-          pnlPercent: 0,
-          reason: `🔒 套利-客队: ${signal.reason}`,
-          confidence: signal.confidence,
-          timestamp: Date.now(),
-        };
-
-        this.orders.set(awayOrder.id, awayOrder);
-        this.positions.set(awayPositionKey, {
-          matchId,
-          team: awayTeam,
-          tokenId: awayTokenId,
-          quantity: awayQuantity,
-          avgCost: awayPrice,
-          currentPrice: awayPrice,
-          unrealizedPnl: 0,
-          unrealizedPnlPercent: 0,
-        });
-
-        // 保存到数据库（主队）
-        await databaseService.savePaperOrder({
-          id: homeOrder.id,
-          matchId,
-          team: homeTeam,
-          tokenId: homeTokenId,
-          orderType: 'BUY',
-          status: 'FILLED',
-          quantity: homeQuantity,
-          entryPrice: homePrice,
-          currentPrice: homePrice,
-          pnl: 0,
-          pnlPercent: 0,
-          confidence: signal.confidence,
-          reason: homeOrder.reason,
-          entryHomeScore: homeScore,
-          entryAwayScore: awayScore,
-          entryScoreDiff: homeScore - awayScore,
-          entryEspnProb: espnHomeProb,
-          entryPolyPrice: homePrice,
-          entryMatchStatus: matchStatus,
-          entryQuarter: quarter,
-          entryTimeRemaining: timeRemaining,
-        });
-
-        await databaseService.savePaperPosition({
-          matchId,
-          team: homeTeam,
-          tokenId: homeTokenId,
-          quantity: homeQuantity,
-          avgCost: homePrice,
-          currentPrice: homePrice,
-          unrealizedPnl: 0,
-          unrealizedPnlPercent: 0,
-        });
-
-        // 保存到数据库（客队）
-        await databaseService.savePaperOrder({
-          id: awayOrder.id,
-          matchId,
-          team: awayTeam,
-          tokenId: awayTokenId,
-          orderType: 'BUY',
-          status: 'FILLED',
-          quantity: awayQuantity,
-          entryPrice: awayPrice,
-          currentPrice: awayPrice,
-          pnl: 0,
-          pnlPercent: 0,
-          confidence: signal.confidence,
-          reason: awayOrder.reason,
-          entryHomeScore: homeScore,
-          entryAwayScore: awayScore,
-          entryScoreDiff: awayScore - homeScore,
-          entryEspnProb: espnAwayProb,
-          entryPolyPrice: awayPrice,
-          entryMatchStatus: matchStatus,
-          entryQuarter: quarter,
-          entryTimeRemaining: timeRemaining,
-        });
-
-        await databaseService.savePaperPosition({
-          matchId,
-          team: awayTeam,
-          tokenId: awayTokenId,
-          quantity: awayQuantity,
-          avgCost: awayPrice,
-          currentPrice: awayPrice,
-          unrealizedPnl: 0,
-          unrealizedPnlPercent: 0,
-        });
-
-        // 更新账户余额
-        await databaseService.updateAccountBalance(this.balance);
-
-        logger.info(`✅ [Paper Trading] 套利买入完成！`);
-        logger.info(`   主队 ${homeTeam}: x${homeQuantity.toFixed(2)} @$${homePrice.toFixed(4)} = $${homeInvestment.toFixed(2)}`);
-        logger.info(`   客队 ${awayTeam}: x${awayQuantity.toFixed(2)} @$${awayPrice.toFixed(4)} = $${awayInvestment.toFixed(2)}`);
-        logger.info(`   总成本: $${totalCost.toFixed(2)}, 余额: $${this.balance.toFixed(2)}`);
-
-        return homeOrder; // 返回主队订单作为代表
+      if (signal.type === SignalType.BUY_HOME) {
+        team = homeTeam;
+        tokenId = homeTokenId;
+        price = homeBestAsk || homeMidPrice;
+        espnProb = espnHomeProb;
+      } else if (signal.type === SignalType.BUY_AWAY) {
+        team = awayTeam;
+        tokenId = awayTokenId;
+        price = awayBestAsk || awayMidPrice;
+        espnProb = espnAwayProb;
       } else {
-        // 📈 传统单边套利：只买入一边
-        let team: string;
-        let tokenId: string;
-        let price: number;
-        let espnProb: number | undefined;
-
-        if (signal.type === SignalType.BUY_HOME) {
-          team = homeTeam;
-          tokenId = homeTokenId;
-          price = homeBestAsk || homeMidPrice;
-          espnProb = espnHomeProb;
-        } else if (signal.type === SignalType.BUY_AWAY) {
-          team = awayTeam;
-          tokenId = awayTokenId;
-          price = awayBestAsk || awayMidPrice;
-          espnProb = espnAwayProb;
-        } else {
-          return null;
-        }
-
-        // 计算买入数量：使用固定仓位（如 10% 资金）
-        const positionSize = this.balance * 0.10; // 10% 仓位
-        const quantity = positionSize / price;
-
-        // 检查余额
-        const cost = quantity * price;
-        if (cost > this.balance) {
-          logger.warn(`[Paper Trading] 余额不足: 需要 $${cost.toFixed(2)}, 可用 $${this.balance.toFixed(2)}`);
-          return null;
-        }
-
-        // 检查是否已有该持仓
-        const positionKey = `${matchId}-${tokenId}`;
-        if (this.positions.has(positionKey)) {
-          logger.debug(`[Paper Trading] 已有持仓，跳过: ${team}`);
-          return null;
-        }
-
-        // 创建订单
-        const order: Order = {
-          id: `ORD${String(this.orderIdCounter++).padStart(6, '0')}`,
-          matchId,
-          type: OrderType.BUY,
-          status: OrderStatus.FILLED,
-          team,
-          tokenId,
-          quantity,
-          entryPrice: price,
-          currentPrice: price,
-          pnl: 0,
-          pnlPercent: 0,
-          reason: signal.reason,
-          confidence: signal.confidence,
-          timestamp: Date.now(),
-        };
-
-        // 计算比分差异
-        const scoreDiff = signal.type === SignalType.BUY_HOME 
-          ? homeScore - awayScore 
-          : awayScore - homeScore;
-
-        // 扣除余额
-        this.balance -= cost;
-
-        // 记录订单到内存
-        this.orders.set(order.id, order);
-
-        // 创建持仓到内存
-        const position: Position = {
-          matchId,
-          team,
-          tokenId,
-          quantity,
-          avgCost: price,
-          currentPrice: price,
-          unrealizedPnl: 0,
-          unrealizedPnlPercent: 0,
-        };
-        this.positions.set(positionKey, position);
-
-        // 💾 保存到数据库（包含战场情况）
-        await databaseService.savePaperOrder({
-          id: order.id,
-          matchId,
-          team,
-          tokenId,
-          orderType: 'BUY',
-          status: 'FILLED',
-          quantity,
-          entryPrice: price,
-          currentPrice: price,
-          pnl: 0,
-          pnlPercent: 0,
-          confidence: signal.confidence,
-          reason: signal.reason,
-          // 买入时的战场情况
-          entryHomeScore: homeScore,
-          entryAwayScore: awayScore,
-          entryScoreDiff: scoreDiff,
-          entryEspnProb: espnProb,
-          entryPolyPrice: price,
-          entryMatchStatus: matchStatus,
-          entryQuarter: quarter,
-          entryTimeRemaining: timeRemaining,
-        });
-
-        // 保存持仓到数据库
-        await databaseService.savePaperPosition({
-          matchId,
-          team,
-          tokenId,
-          quantity,
-          avgCost: price,
-          currentPrice: price,
-          unrealizedPnl: 0,
-          unrealizedPnlPercent: 0,
-        });
-
-        // 更新账户余额
-        await databaseService.updateAccountBalance(this.balance);
-
-        logger.info(`✅ [Paper Trading] 买入 ${team} x${quantity.toFixed(2)} @$${price.toFixed(4)} (成本: $${cost.toFixed(2)})`);
-        logger.info(`   📊 战场情况: ${homeTeam} ${homeScore}:${awayScore} ${awayTeam}, ESPN胜率: ${espnProb ? (espnProb * 100).toFixed(1) + '%' : 'N/A'}`);
-        logger.info(`   订单ID: ${order.id}, 置信度: ${(signal.confidence * 100).toFixed(1)}%, 余额: $${this.balance.toFixed(2)}`);
-
-        return order;
+        return null;
       }
+
+      // 计算买入数量：使用固定仓位（如 10% 资金）
+      const positionSize = this.balance * 0.10; // 10% 仓位
+      const quantity = positionSize / price;
+
+      // 检查余额
+      const cost = quantity * price;
+      if (cost > this.balance) {
+        logger.warn(`[Paper Trading] 余额不足: 需要 $${cost.toFixed(2)}, 可用 $${this.balance.toFixed(2)}`);
+        return null;
+      }
+
+      // 检查是否已有该持仓
+      const positionKey = `${matchId}-${tokenId}`;
+      if (this.positions.has(positionKey)) {
+        logger.debug(`[Paper Trading] 已有持仓，跳过: ${team}`);
+        return null;
+      }
+
+      // 创建订单
+      const order: Order = {
+        id: `ORD${String(this.orderIdCounter++).padStart(6, '0')}`,
+        matchId,
+        type: OrderType.BUY,
+        status: OrderStatus.FILLED,
+        team,
+        tokenId,
+        quantity,
+        entryPrice: price,
+        currentPrice: price,
+        pnl: 0,
+        pnlPercent: 0,
+        reason: signal.reason,
+        confidence: signal.confidence,
+        timestamp: Date.now(),
+      };
+
+      // 计算比分差异
+      const scoreDiff = signal.type === SignalType.BUY_HOME 
+        ? homeScore - awayScore 
+        : awayScore - homeScore;
+
+      // 扣除余额
+      this.balance -= cost;
+
+      // 记录订单到内存
+      this.orders.set(order.id, order);
+
+      // 创建持仓到内存
+      const position: Position = {
+        matchId,
+        team,
+        tokenId,
+        quantity,
+        avgCost: price,
+        currentPrice: price,
+        unrealizedPnl: 0,
+        unrealizedPnlPercent: 0,
+      };
+      this.positions.set(positionKey, position);
+
+      // 💾 保存到数据库（包含战场情况）
+      await databaseService.savePaperOrder({
+        id: order.id,
+        matchId,
+        team,
+        tokenId,
+        orderType: 'BUY',
+        status: 'FILLED',
+        quantity,
+        entryPrice: price,
+        currentPrice: price,
+        pnl: 0,
+        pnlPercent: 0,
+        confidence: signal.confidence,
+        reason: signal.reason,
+        // 买入时的战场情况
+        entryHomeScore: homeScore,
+        entryAwayScore: awayScore,
+        entryScoreDiff: scoreDiff,
+        entryEspnProb: espnProb,
+        entryPolyPrice: price,
+        entryMatchStatus: matchStatus,
+        entryQuarter: quarter,
+        entryTimeRemaining: timeRemaining,
+      });
+
+      // 保存持仓到数据库
+      await databaseService.savePaperPosition({
+        matchId,
+        team,
+        tokenId,
+        quantity,
+        avgCost: price,
+        currentPrice: price,
+        unrealizedPnl: 0,
+        unrealizedPnlPercent: 0,
+      });
+
+      // 更新账户余额
+      await databaseService.updateAccountBalance(this.balance);
+
+      logger.info(`✅ [Paper Trading] 买入 ${team} x${quantity.toFixed(2)} @$${price.toFixed(4)} (成本: $${cost.toFixed(2)})`);
+      logger.info(`   📊 战场情况: ${homeTeam} ${homeScore}:${awayScore} ${awayTeam}, ESPN胜率: ${espnProb ? (espnProb * 100).toFixed(1) + '%' : 'N/A'}`);
+      logger.info(`   订单ID: ${order.id}, 置信度: ${(signal.confidence * 100).toFixed(1)}%, 余额: $${this.balance.toFixed(2)}`);
+
+      return order;
     } catch (error) {
       logger.error('[Paper Trading] 执行交易失败:', error);
       return null;

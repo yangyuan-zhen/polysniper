@@ -136,9 +136,10 @@ class PaperTradingService {
       if (isArbitrage) {
         // 🎯 无风险套利：同时买入主队和客队
         logger.info(`🔒 [Paper Trading] 检测到无风险套利机会！`);
+        logger.info(`   📍 MatchID: ${matchId}`);
         logger.info(`   套利空间: ${(signal.details.arbitrageMargin! * 100).toFixed(2)}%`);
-        logger.info(`   主队 ${homeTeam}: $${(homeBestAsk || homeMidPrice).toFixed(4)}`);
-        logger.info(`   客队 ${awayTeam}: $${(awayBestAsk || awayMidPrice).toFixed(4)}`);
+        logger.info(`   主队 ${homeTeam}: $${(homeBestAsk || homeMidPrice).toFixed(4)} (Token: ${homeTokenId?.slice(0, 16)}...)`);
+        logger.info(`   客队 ${awayTeam}: $${(awayBestAsk || awayMidPrice).toFixed(4)} (Token: ${awayTokenId?.slice(0, 16)}...)`);
 
         const homePrice = homeBestAsk || homeMidPrice;
         const awayPrice = awayBestAsk || awayMidPrice;

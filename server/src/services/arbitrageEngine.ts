@@ -59,8 +59,10 @@ class ArbitrageEngine {
     const confidence = Math.min(0.7 + arbitrageMargin * 2, 0.99);
 
     logger.info(`🎯 发现套利机会！${match.homeTeam.name} vs ${match.awayTeam.name}`);
-    logger.info(`   主队: $${homePrice.toFixed(3)} + 客队: $${awayPrice.toFixed(3)} = $${totalProb.toFixed(3)}`);
-    logger.info(`   套利空间: ${profitPercent.toFixed(2)}% (置信度: ${(confidence * 100).toFixed(1)}%)`);
+    logger.info(`   MatchID: ${match.id}`);
+    logger.info(`   主队 ${match.homeTeam.name}: $${homePrice.toFixed(3)} (TokenID: ${match.poly.homeTokenId?.slice(0, 16)}...)`);
+    logger.info(`   客队 ${match.awayTeam.name}: $${awayPrice.toFixed(3)} (TokenID: ${match.poly.awayTokenId?.slice(0, 16)}...)`);
+    logger.info(`   总价: $${totalProb.toFixed(3)}, 套利空间: ${profitPercent.toFixed(2)}% (置信度: ${(confidence * 100).toFixed(1)}%)`);
 
     // 生成套利信号（需要同时买入主队和客队）
     // 为了简化，我们生成一个信号，在 reason 中标注这是双边套利

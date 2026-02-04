@@ -1,21 +1,25 @@
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
-import { Header } from './components/Header';
-import { MatchCard } from './components/MatchCard';
-import { PaperTradingPanel } from './components/PaperTradingPanel';
-import { TradeHistory } from './components/TradeHistory';
-const ColorGuide = lazy(() => import('./components/ColorGuide').then(module => ({ default: module.ColorGuide })));
-import { websocketService } from './services/websocket';
-import { fetchMatches } from './services/api';
-import type { UnifiedMatch } from './types/backend';
-import { Info, X, History as HistoryIcon } from 'lucide-react';
+import { useState, useEffect, useMemo, lazy, Suspense } from "react";
+import { Header } from "./components/Header";
+import { MatchCard } from "./components/MatchCard";
+import { PaperTradingPanel } from "./components/PaperTradingPanel";
+import { TradeHistory } from "./components/TradeHistory";
+const ColorGuide = lazy(() =>
+  import("./components/ColorGuide").then((module) => ({
+    default: module.ColorGuide,
+  })),
+);
+import { websocketService } from "./services/websocket";
+import { fetchMatches } from "./services/api";
+import type { UnifiedMatch } from "./types/backend";
+import { Info, X, History as HistoryIcon } from "lucide-react";
 
-type FilterType = 'all' | 'signals' | 'live';
+type FilterType = "all" | "signals" | "live";
 
 function App() {
   const [matches, setMatches] = useState<UnifiedMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
-  const [filter, setFilter] = useState<FilterType>('all');
+  const [filter, setFilter] = useState<FilterType>("all");
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -24,10 +28,10 @@ function App() {
     let filtered = [...matches];
 
     // 应用筛选
-    if (filter === 'signals') {
-      filtered = filtered.filter(m => m.signals.length > 0);
-    } else if (filter === 'live') {
-      filtered = filtered.filter(m => m.status === 'LIVE');
+    if (filter === "signals") {
+      filtered = filtered.filter((m) => m.signals.length > 0);
+    } else if (filter === "live") {
+      filtered = filtered.filter((m) => m.status === "LIVE");
     }
 
     // 按开始时间排序（从早到晚）
@@ -40,22 +44,27 @@ function App() {
 
   // 按日期分组(使用中国时区 UTC+8)
   const groupedMatches = useMemo(() => {
-    const groups: { date: string; displayDate: string; matches: UnifiedMatch[] }[] = [];
+    const groups: {
+      date: string;
+      displayDate: string;
+      matches: UnifiedMatch[];
+      allFinished: boolean;
+    }[] = [];
     const dateMap = new Map<string, UnifiedMatch[]>();
 
     // 辅助函数:将时间戳转换为中国时区的日期字符串 (YYYY-MM-DD)
     const toChinaDateKey = (timestamp: string | number): string => {
       const date = new Date(timestamp);
-      const formatter = new Intl.DateTimeFormat('zh-CN', {
-        timeZone: 'Asia/Shanghai',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
+      const formatter = new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
       });
       const parts = formatter.formatToParts(date);
-      const year = parts.find(p => p.type === 'year')?.value || '';
-      const month = parts.find(p => p.type === 'month')?.value || '';
-      const day = parts.find(p => p.type === 'day')?.value || '';
+      const year = parts.find((p) => p.type === "year")?.value || "";
+      const month = parts.find((p) => p.type === "month")?.value || "";
+      const day = parts.find((p) => p.type === "day")?.value || "";
       return `${year}-${month}-${day}`;
     };
 
@@ -64,12 +73,12 @@ function App() {
       return toChinaDateKey(Date.now());
     };
 
-    filteredAndSortedMatches.forEach(match => {
+    filteredAndSortedMatches.forEach((match) => {
       if (!match.startTime) return;
-      
+
       // 使用中国时区进行分组
       const dateKey = toChinaDateKey(match.startTime);
-      
+
       if (!dateMap.has(dateKey)) {
         dateMap.set(dateKey, []);
       }
@@ -85,39 +94,57 @@ function App() {
     })();
 
     dateMap.forEach((matches, dateKey) => {
-      let displayDate = '';
+      // 检查这个日期的所有比赛是否都已结束
+      const allFinished = matches.every((m) => m.status === "FINAL");
+
+      let displayDate = "";
       if (dateKey === chinaToday) {
-        displayDate = '今天';
+        displayDate = "今天";
       } else if (dateKey === chinaTomorrow) {
-        displayDate = '明天';
+        displayDate = "明天";
       } else {
         // 使用中国时区获取星期几
-        const [year, month, day] = dateKey.split('-').map(Number);
+        const [year, month, day] = dateKey.split("-").map(Number);
         const date = new Date(year, month - 1, day);
-        const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+        const weekdays = [
+          "周日",
+          "周一",
+          "周二",
+          "周三",
+          "周四",
+          "周五",
+          "周六",
+        ];
         const weekday = weekdays[date.getDay()];
         displayDate = `${month}月${day}日 ${weekday}`;
       }
-      
+
       groups.push({
         date: dateKey,
         displayDate: `${displayDate} (${dateKey})`,
-        matches
+        matches,
+        allFinished,
       });
     });
 
-    // 按日期排序
-    return groups.sort((a, b) => a.date.localeCompare(b.date));
+    // 按日期排序，并过滤掉所有比赛都已结束的日期组
+    return groups
+      .filter((group) => !group.allFinished) // 移除所有比赛都结束的日期
+      .sort((a, b) => a.date.localeCompare(b.date));
   }, [filteredAndSortedMatches]);
 
   // 统计数据
   const stats = useMemo(() => {
-    const liveCount = matches.filter(m => m.status === 'LIVE').length;
-    const withSignals = matches.filter(m => m.signals.length > 0).length;
-    const allSignalsFlat = matches.flatMap(m => m.signals);
-    const buySignals = allSignalsFlat.filter(s => s.type === 'BUY_HOME' || s.type === 'BUY_AWAY').length;
-    const sellSignals = allSignalsFlat.filter(s => s.type === 'SELL_HOME' || s.type === 'SELL_AWAY').length;
-    
+    const liveCount = matches.filter((m) => m.status === "LIVE").length;
+    const withSignals = matches.filter((m) => m.signals.length > 0).length;
+    const allSignalsFlat = matches.flatMap((m) => m.signals);
+    const buySignals = allSignalsFlat.filter(
+      (s) => s.type === "BUY_HOME" || s.type === "BUY_AWAY",
+    ).length;
+    const sellSignals = allSignalsFlat.filter(
+      (s) => s.type === "SELL_HOME" || s.type === "SELL_AWAY",
+    ).length;
+
     return {
       total: matches.length,
       live: liveCount,
@@ -128,7 +155,7 @@ function App() {
   }, [matches]);
 
   useEffect(() => {
-    console.log('[App] 🚀 初始化 WebSocket 连接...');
+    console.log("[App] 🚀 初始化 WebSocket 连接...");
 
     // 连接 WebSocket (使用 Vite 代理,不指定完整 URL)
     // 在开发环境下,Vite 会自动代理到 localhost:3000
@@ -136,44 +163,55 @@ function App() {
 
     // 定义回调函数（用于清理）
     const handleConnect = () => {
-      console.log('[App] ✅ WebSocket 已连接');
+      console.log("[App] ✅ WebSocket 已连接");
       setConnected(true);
       // 连接成功后立即订阅
       websocketService.subscribe();
     };
 
     const handleDisconnect = () => {
-      console.log('[App] ❌ WebSocket 已断开');
+      console.log("[App] ❌ WebSocket 已断开");
       setConnected(false);
     };
 
     const handleMatchesUpdate = (data: any) => {
       const now = new Date().toLocaleTimeString();
-      console.log(`[App] 📊 收到比赛更新 (${data.type}):`, data.data.length, '场比赛', now);
+      console.log(
+        `[App] 📊 收到比赛更新 (${data.type}):`,
+        data.data.length,
+        "场比赛",
+        now,
+      );
       console.log(`[App] 🔍 原始数据:`, data);
-      
+
       // 打印所有比赛的价格信息用于调试
       if (data.data.length > 0) {
-        console.log('[App] 💰 当前所有比赛价格:');
+        console.log("[App] 💰 当前所有比赛价格:");
         data.data.forEach((match: any, index: number) => {
           if (match.poly?.homePrice && match.poly?.awayPrice) {
-            console.log(`  ${index + 1}. ${match.homeTeam.name} $${match.poly.homePrice.toFixed(4)} vs ${match.awayTeam.name} $${match.poly.awayPrice.toFixed(4)} (更新: ${new Date(match.lastUpdate).toLocaleTimeString()})`);
+            console.log(
+              `  ${index + 1}. ${match.homeTeam.name} $${match.poly.homePrice.toFixed(4)} vs ${match.awayTeam.name} $${match.poly.awayPrice.toFixed(4)} (更新: ${new Date(match.lastUpdate).toLocaleTimeString()})`,
+            );
           }
         });
       }
-      
+
       // 直接使用后端发送的数据（已经是深度克隆的新对象）
       console.log(`[App] ⚡ 更新 React 状态，数据长度: ${data.data.length}`);
-      
+
       // 使用函数式更新确保触发重渲染
       setMatches(() => data.data);
       setLoading(false);
-      
+
       console.log(`[App] ✅ setMatches 调用完成，触发重渲染`);
     };
 
     const handleSignalAlert = (data: any) => {
-      console.log(`[App] 🚨 套利信号告警 - ${data.matchId}:`, data.signals.length, '个信号');
+      console.log(
+        `[App] 🚨 套利信号告警 - ${data.matchId}:`,
+        data.signals.length,
+        "个信号",
+      );
       // 可以在这里添加通知逻辑
     };
 
@@ -185,18 +223,18 @@ function App() {
 
     // 检查初始连接状态（防止监听器注册前已经连接）
     if (websocketService.isConnected()) {
-      console.log('[App] 🔗 WebSocket 已经处于连接状态');
+      console.log("[App] 🔗 WebSocket 已经处于连接状态");
       setConnected(true);
       websocketService.subscribe();
     }
 
     // 清理：移除事件监听器，但保持连接
     return () => {
-      console.log('[App] 🧹 清理 WebSocket 监听器');
-      websocketService.off('connect', handleConnect);
-      websocketService.off('disconnect', handleDisconnect);
-      websocketService.off('matchesUpdate', handleMatchesUpdate);
-      websocketService.off('signalAlert', handleSignalAlert);
+      console.log("[App] 🧹 清理 WebSocket 监听器");
+      websocketService.off("connect", handleConnect);
+      websocketService.off("disconnect", handleDisconnect);
+      websocketService.off("matchesUpdate", handleMatchesUpdate);
+      websocketService.off("signalAlert", handleSignalAlert);
       // 注意：不要断开连接，让 WebSocket 保持活跃
     };
   }, []);
@@ -204,11 +242,11 @@ function App() {
   const handleRefresh = async () => {
     setLoading(true);
     try {
-      console.log('[App] 🔄 手动刷新比赛数据...');
+      console.log("[App] 🔄 手动刷新比赛数据...");
       const data = await fetchMatches();
       setMatches(data);
     } catch (error) {
-      console.error('[App] ❌ 刷新失败:', error);
+      console.error("[App] ❌ 刷新失败:", error);
     } finally {
       setLoading(false);
     }
@@ -235,27 +273,37 @@ function App() {
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-blue-400" />
                 <span className="text-gray-400 text-sm">监控</span>
-                <span className="text-white font-bold text-lg">{stats.total}</span>
+                <span className="text-white font-bold text-lg">
+                  {stats.total}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                 <span className="text-gray-400 text-sm">进行中</span>
-                <span className="text-green-400 font-bold text-lg">{stats.live}</span>
+                <span className="text-green-400 font-bold text-lg">
+                  {stats.live}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-yellow-400" />
                 <span className="text-gray-400 text-sm">有信号</span>
-                <span className="text-yellow-400 font-bold text-lg">{stats.withSignals}</span>
+                <span className="text-yellow-400 font-bold text-lg">
+                  {stats.withSignals}
+                </span>
               </div>
               <div className="h-6 w-px bg-white/10" />
               <div className="flex items-center gap-4 text-sm">
                 <div className="flex items-center gap-2">
                   <span className="text-gray-500">买入</span>
-                  <span className="text-green-400 font-bold">{stats.buySignals}</span>
+                  <span className="text-green-400 font-bold">
+                    {stats.buySignals}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-gray-500">卖出</span>
-                  <span className="text-red-400 font-bold">{stats.sellSignals}</span>
+                  <span className="text-red-400 font-bold">
+                    {stats.sellSignals}
+                  </span>
                 </div>
               </div>
             </div>
@@ -264,39 +312,40 @@ function App() {
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 bg-white/5 rounded-lg p-1">
                 <button
-                  onClick={() => setFilter('all')}
+                  onClick={() => setFilter("all")}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                    filter === 'all' 
-                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' 
-                      : 'text-gray-400 hover:text-white'
+                    filter === "all"
+                      ? "bg-purple-600 text-white shadow-lg shadow-purple-500/20"
+                      : "text-gray-400 hover:text-white"
                   }`}
                 >
                   全部 <span className="ml-1 opacity-60">{matches.length}</span>
                 </button>
                 <button
-                  onClick={() => setFilter('signals')}
+                  onClick={() => setFilter("signals")}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                    filter === 'signals' 
-                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' 
-                      : 'text-gray-400 hover:text-white'
+                    filter === "signals"
+                      ? "bg-purple-600 text-white shadow-lg shadow-purple-500/20"
+                      : "text-gray-400 hover:text-white"
                   }`}
                 >
-                  有信号 <span className="ml-1 opacity-60">{stats.withSignals}</span>
+                  有信号{" "}
+                  <span className="ml-1 opacity-60">{stats.withSignals}</span>
                 </button>
                 <button
-                  onClick={() => setFilter('live')}
+                  onClick={() => setFilter("live")}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-                    filter === 'live' 
-                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20' 
-                      : 'text-gray-400 hover:text-white'
+                    filter === "live"
+                      ? "bg-purple-600 text-white shadow-lg shadow-purple-500/20"
+                      : "text-gray-400 hover:text-white"
                   }`}
                 >
                   进行中 <span className="ml-1 opacity-60">{stats.live}</span>
                 </button>
               </div>
-              
+
               <div className="h-8 w-px bg-white/10" />
-              
+
               <button
                 onClick={() => setIsGuideOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-purple-600/10 hover:bg-purple-600/20 text-purple-400 rounded-lg text-sm font-medium transition-all border border-purple-500/20"
@@ -312,20 +361,22 @@ function App() {
                 <HistoryIcon className="w-4 h-4" />
                 <span>交易历史</span>
               </button>
-              
+
               <div className="flex items-center gap-2 px-3 py-2 bg-white/5 rounded-lg">
-                <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`} />
+                <div
+                  className={`w-2 h-2 rounded-full ${connected ? "bg-green-400" : "bg-red-400"}`}
+                />
                 <span className="text-xs text-gray-400">
-                  {connected ? '已连接' : '未连接'}
+                  {connected ? "已连接" : "未连接"}
                 </span>
               </div>
-              
+
               <button
                 onClick={handleRefresh}
                 disabled={loading}
                 className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium transition-all disabled:opacity-50"
               >
-                {loading ? '刷新中...' : '🔄'}
+                {loading ? "刷新中..." : "🔄"}
               </button>
             </div>
           </div>
@@ -342,27 +393,28 @@ function App() {
               <div>加载比赛数据中...</div>
             </div>
           ) : groupedMatches.length > 0 ? (
-            groupedMatches.map(group => (
+            groupedMatches.map((group) => (
               <div key={group.date} className="space-y-4">
                 {/* Date Header */}
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-3 bg-gradient-to-r from-purple-600/20 to-blue-600/20 border border-purple-500/30 rounded-lg px-6 py-3">
                     <div className="text-2xl">📅</div>
                     <div>
-                      <div className="text-lg font-bold text-white">{group.displayDate}</div>
-                      <div className="text-xs text-gray-400">共 {group.matches.length} 场比赛</div>
+                      <div className="text-lg font-bold text-white">
+                        {group.displayDate}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        共 {group.matches.length} 场比赛
+                      </div>
                     </div>
                   </div>
                   <div className="flex-1 h-px bg-gradient-to-r from-purple-500/30 to-transparent" />
                 </div>
-                
+
                 {/* Matches Grid */}
                 <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                   {group.matches.map((match) => (
-                    <MatchCard 
-                      key={match.id}
-                      match={match}
-                    />
+                    <MatchCard key={match.id} match={match} />
                   ))}
                 </div>
               </div>
@@ -370,19 +422,31 @@ function App() {
           ) : (
             <div className="text-center text-gray-500 py-20">
               <div className="text-4xl mb-4">🏀</div>
-              <div className="text-lg">
-                {filter !== 'all' ? '没有符合筛选条件的比赛' : '今日暂无比赛'}
+              <div className="text-lg mb-2">
+                {filter !== "all"
+                  ? "没有符合筛选条件的比赛"
+                  : matches.length > 0 &&
+                      matches.every((m) => m.status === "FINAL")
+                    ? "今日比赛已全部结束"
+                    : "暂无进行中或未开始的比赛"}
               </div>
+              {matches.length > 0 &&
+                matches.every((m) => m.status === "FINAL") && (
+                  <div className="text-sm text-gray-600">
+                    已完成 {matches.length} 场比赛，等待明日赛程更新
+                  </div>
+                )}
             </div>
           )}
         </div>
-
       </div>
 
       {/* Right Drawer - Strategy Guide */}
-      <div className={`fixed inset-y-0 right-0 w-[480px] bg-surface border-l border-white/10 transform transition-transform duration-300 z-[60] overflow-y-auto ${
-        isGuideOpen ? 'translate-x-0' : 'translate-x-full'
-      }`}>
+      <div
+        className={`fixed inset-y-0 right-0 w-[480px] bg-surface border-l border-white/10 transform transition-transform duration-300 z-[60] overflow-y-auto ${
+          isGuideOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
         <div className="sticky top-0 bg-surface/95 backdrop-blur-sm border-b border-white/10 p-6 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
             <Info className="w-6 h-6 text-purple-400" />
@@ -396,7 +460,13 @@ function App() {
           </button>
         </div>
         <div className="p-6">
-          <Suspense fallback={<div className="text-gray-400 text-center py-4">加载策略说明...</div>}>
+          <Suspense
+            fallback={
+              <div className="text-gray-400 text-center py-4">
+                加载策略说明...
+              </div>
+            }
+          >
             <ColorGuide isExpanded={true} onToggle={() => {}} />
           </Suspense>
         </div>
@@ -404,17 +474,14 @@ function App() {
 
       {/* Overlay */}
       {isGuideOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55] transition-opacity"
           onClick={() => setIsGuideOpen(false)}
         />
       )}
 
       {/* Trade History View */}
-      {showHistory && (
-        <TradeHistory onClose={() => setShowHistory(false)} />
-      )}
-
+      {showHistory && <TradeHistory onClose={() => setShowHistory(false)} />}
     </div>
   );
 }

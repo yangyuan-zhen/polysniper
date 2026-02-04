@@ -20,6 +20,7 @@
 polysniper/
 ├── client/          # Frontend app (React + Vite + TailwindCSS)
 ├── server/          # Backend service (Node.js + Express + WebSocket)
+├── shared/          # Shared TypeScript types
 ├── package.json     # Root configuration
 └── README.md        # Project documentation
 ```
@@ -57,6 +58,7 @@ npm start
 ## 🔧 Tech Stack
 
 ### Frontend
+
 - **Framework**: React 19 + TypeScript
 - **Build Tool**: Vite 7
 - **Styling**: TailwindCSS 4
@@ -65,18 +67,53 @@ npm start
 - **WebSocket**: Socket.IO Client
 
 ### Backend
+
 - **Runtime**: Node.js + TypeScript
 - **Framework**: Express
-- **WebSocket**: Socket.IO
+- **WebSocket**: Socket.IO + Native WebSocket (Polymarket CLOB)
+- **Database**: SQLite (Paper Trading)
 - **Cache**: Redis (optional)
 - **Logging**: Winston
-- **Data Sources**: 
-  - ESPN API (game schedules, live scores, win probabilities, injury reports)
-  - Polymarket API (market price data)
+- **Data Sources**:
+  - **ESPN API** - Game schedules, live scores, win probabilities, injury reports, **betting odds (via pickcenter)**
+  - **Polymarket CLOB WebSocket** - Real-time market price data
+  - **Polymarket Gamma API** - Market search and matching
+
+## 📊 Arbitrage Strategy
+
+### Core Algorithm: Conservative Consensus
+
+```
+Edge = MIN(ESPN Win Probability, Bookmaker Average Probability) - Polymarket Price
+```
+
+| Data Source              | Purpose                           | Free? |
+| ------------------------ | --------------------------------- | ----- |
+| **ESPN Win Probability** | Real-time statistical prediction  | ✅    |
+| **ESPN PickCenter Odds** | Bookmaker odds (DraftKings, etc.) | ✅    |
+| **Polymarket Price**     | Prediction market buy/sell price  | ✅    |
+
+### Signal Generation Rules
+
+- **Minimum Edge**: 5% (configurable)
+- **Live Only**: Signals only trigger during live games
+- **Price Used**: BestAsk (actual buy price, not mid price)
+
+### Example
+
+```
+ESPN Probability:     65%
+Bookmaker Probability: 60%  (from DraftKings)
+Polymarket Ask Price:  $0.52
+
+Conservative Probability = MIN(65%, 60%) = 60%
+Edge = 60% - 52% = 8% ≥ 5% → BUY SIGNAL ✅
+```
 
 ## 📡 API Endpoints
 
 ### REST API
+
 - `GET /health` - Health check
 - `GET /api/matches` - Get all matches
 - `GET /api/matches/:id` - Get single match
@@ -84,6 +121,7 @@ npm start
 - `GET /api/stats` - Get statistics
 
 ### WebSocket
+
 - **Connection**: `ws://localhost:3000`
 - **Events**:
   - `subscribe` - Subscribe to match updates
@@ -95,35 +133,40 @@ npm start
 
 ## ✨ Core Features
 
-- ⚡ **Millisecond Real-time Updates** - WebSocket push, price latency < 1s
-- 🔄 **Multi-source Data Integration** - ESPN odds + Polymarket prediction markets
-- 💰 **Automatic Arbitrage Detection** - EV+ model, triggers at >10% profit margin
+- ⚡ **Millisecond Real-time Updates** - Polymarket WebSocket push, price latency < 1s
+- 🔄 **Multi-source Data Integration** - ESPN + Polymarket + Bookmaker odds
+- 💰 **Conservative Arbitrage Detection** - Dual-source consensus, 5%+ edge threshold
+- 🎰 **Free Odds Data** - ESPN PickCenter bookmaker odds (no API key needed)
 - 🤖 **Paper Trading** - Q1-Q3 value reversion strategy with hybrid exit mechanism
 - 💸 **Real Price Simulation** - Use Ask for buying, Bid for selling, includes slippage
 - 🎯 **Smart Exit Strategy** - Take profit (25%) + logic invalidation + hard stop loss (50%)
-- 📊 **Data Visualization** - ESPN-style win probability curves with interactive hover
+- 📊 **Data Visualization** - ESPN-style win probability curves + bookmaker odds display
 - 🎯 **Intelligent Matching** - Three-layer funnel for precise team and market matching
 - ⏰ **Time Control** - Only trade Q1-Q3, avoid Q4 gambling logic
 
 ## 📊 Data Update Strategy
 
 ### Real-time Data (No Cache)
-- ✅ **Scores, Time, ESPN Win Prob, Polymarket Prices**
+
+- ✅ **Scores, Time, ESPN Win Prob, Polymarket Prices, Bookmaker Odds**
 - ESPN: Request every **1 second** (throttled)
 - Polymarket: **WebSocket real-time push** (passive receive)
 - Frontend: Push every **500ms**
 
 ### Static Data (24-hour Long Cache)
+
 - ✅ **Today's Match List, Token IDs, Market IDs, Team Mappings**
 - This data doesn't change during games
 - Reduces API requests, improves performance
 
 ### Price System
-| Price Type | Usage | Source |
-|---------|------|------|
-| **Ask (Sell Price)** | Pay when buying | `asks[0].price` |
-| **Bid (Buy Price)** | Receive when selling | `bids[0].price` |
-| **Mid (Mid Price)** | Display, valuation | `(Bid + Ask) / 2` |
+
+| Price Type           | Usage                | Source                  |
+| -------------------- | -------------------- | ----------------------- |
+| **Ask (Sell Price)** | Pay when buying      | `asks[0].price`         |
+| **Bid (Buy Price)**  | Receive when selling | `bids[0].price`         |
+| **Mid (Mid Price)**  | Display, valuation   | `(Bid + Ask) / 2`       |
+| **Decimal Odds**     | Bookmaker display    | Converted from American |
 
 ## 🔐 Environment Configuration
 
@@ -138,7 +181,7 @@ NODE_ENV=development
 POLYMARKET_WS_ENABLED=true
 POLYMARKET_WS_URL=wss://ws-subscriptions-clob.polymarket.com/ws/market
 # Proxy: use 'none' for overseas servers, or 'http://127.0.0.1:7890' for China
-POLYMARKET_WS_PROXY=none
+POLYMARKET_WS_PROXY=http://127.0.0.1:7890
 
 # CORS
 CORS_ORIGIN=*
@@ -150,13 +193,16 @@ REDIS_ENABLED=false
 LOG_LEVEL=info
 ```
 
-> ⚠️ **Important**: 
+> ⚠️ **Important**:
+>
 > - Polymarket WebSocket requires HTTP proxy access (for networks in China)
+> - Use Clash or similar proxy at `127.0.0.1:7890`
 > - Heartbeat mechanism uses WebSocket protocol-level Ping/Pong (15s interval)
 
 ## 📝 Development Guide
 
 ### Frontend Development
+
 ```bash
 cd client
 npm run dev      # Start dev server
@@ -165,6 +211,7 @@ npm run lint     # Code linting
 ```
 
 ### Backend Development
+
 ```bash
 cd server
 npm run dev      # Start dev server
@@ -197,15 +244,17 @@ docker compose logs -f server
 ```
 
 #### Docker Commands Reference
-| Command | Description |
-|---------|-------------|
-| `docker compose up -d` | Start all services |
-| `docker compose down` | Stop all services |
-| `docker compose restart server` | Restart backend |
-| `docker compose logs -f server` | View backend logs |
-| `docker compose ps` | Check container status |
+
+| Command                         | Description            |
+| ------------------------------- | ---------------------- |
+| `docker compose up -d`          | Start all services     |
+| `docker compose down`           | Stop all services      |
+| `docker compose restart server` | Restart backend        |
+| `docker compose logs -f server` | View backend logs      |
+| `docker compose ps`             | Check container status |
 
 ### Using PM2 (Alternative)
+
 ```bash
 cd server
 npm run start:pm2
@@ -215,20 +264,21 @@ npm run start:pm2
 
 1. **Proxy Configuration** 🌐
    - **Overseas servers**: Set `POLYMARKET_WS_PROXY=none`
-   - **China networks**: Set `POLYMARKET_WS_PROXY=http://127.0.0.1:7890` (or your proxy address)
+   - **China networks**: Set `POLYMARKET_WS_PROXY=http://127.0.0.1:7890` (Clash proxy)
 
 2. **WebSocket Subscription Limits** 📡
    - Maximum 10 tokens per subscription
    - 100ms interval between batches
    - Avoid `INVALID OPERATION` errors
 
-3. **Special Team Name Handling** 🏀
-   - Thunder team name contains "under"
-   - Requires special logic to avoid false exclusion
+3. **Free Data Sources** 💸
+   - ESPN PickCenter provides bookmaker odds (DraftKings, etc.) for free
+   - No API key required for odds data
+   - Odds automatically extracted and displayed
 
 4. **Data Latency** ⏱️
    - Polymarket WebSocket: < 1s
-   - ESPN polling: 2-30s (dynamically adjusted)
+   - ESPN polling: 1-5s (throttled)
 
 ## 💼 Paper Trading System
 
@@ -242,6 +292,7 @@ npm run start:pm2
 ### 💾 Database Usage
 
 #### Database File Location
+
 ```
 server/data/polysniper.db
 ```
@@ -264,18 +315,21 @@ npm run reset-db
 ### 📊 Auto-recorded Content
 
 #### 1. Paper Trading Account
+
 - Initial balance: $1000
 - Current balance
 - Total trades, win rate
 - Total P&L, P&L percentage
 
 #### 2. Trade Orders
+
 - Buy/sell records
 - Entry/exit prices
 - P&L statistics
 - **Battle Context**: scores, quarter, time, ESPN probabilities
 
 #### 3. Market Snapshots (every 3 seconds)
+
 - **Only saves LIVE and FINAL status** (pre-game data not saved)
 - Scores, probabilities, prices
 - Arbitrage signals
@@ -302,10 +356,12 @@ Restart project → Auto-load previous data
 ### 📈 View Trading Data
 
 **Real-time View (Frontend)**:
+
 - Visit `http://localhost:5173`
 - Check "Paper Trading" panel
 
 **Historical View (Command Line)**:
+
 ```bash
 cd server
 npm run view-snapshots  # View market snapshots
@@ -318,7 +374,7 @@ npm run init-db         # View account status
 // Runs automatically, no configuration needed
 Initial Capital: $1000 USDC
 Position Management: 10% capital per trade
-Trading Logic: 
+Trading Logic:
   - Find signal → Auto buy (Ask price)
   - Real-time P&L → Market valuation (Mid price)
   - Game ends → Auto close (Bid price)
@@ -330,6 +386,7 @@ Exit Strategy:
 ```
 
 **Example Logs:**
+
 ```
 ✅ [Paper Trading] Buy LA Clippers x11.63 @$0.8600 (Ask price, cost: $10.00)
    Order ID: ORD000001, Confidence: 95.0%, Balance: $990.00
@@ -340,14 +397,15 @@ Exit Strategy:
    Exit Reason: Take Profit
 ```
 
-
 ## 📚 Documentation Index
 
 ### Core Documentation
+
 - 📖 **[README](./README.md)** - Project overview (English)
 - 📖 **[中文文档](./README.zh-CN.md)** - Project overview (Chinese)
 
 ### API Documentation
+
 - 📡 **[API Documentation](./server/API.md)** - REST API & WebSocket (English)
 - 📡 **[API 接口文档](./server/API.zh-CN.md)** - REST API & WebSocket (Chinese)
 

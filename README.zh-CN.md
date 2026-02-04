@@ -10,7 +10,7 @@
 >
 > ⚠️ **实验性项目**: 本项目目前处于实验阶段，策略和功能可能随时调整。请勿用于真实资金交易，仅供学习和研究使用。
 
-> 📖 **详细文档**: [系统架构](./docs/ARCHITECTURE.md) | [价格指南](./docs/PRICE_GUIDE.md)
+> 📖 **详细文档**: [API 接口文档](./server/API.zh-CN.md)
 
 ## 📸 界面预览
 
@@ -22,6 +22,7 @@
 polysniper/
 ├── client/          # 前端应用 (React + Vite + TailwindCSS)
 ├── server/          # 后端服务 (Node.js + Express + WebSocket)
+├── shared/          # 共享 TypeScript 类型定义
 ├── package.json     # 根配置文件
 └── README.md        # 项目说明
 ```
@@ -59,6 +60,7 @@ npm start
 ## 🔧 技术栈
 
 ### 前端
+
 - **框架**: React 19 + TypeScript
 - **构建工具**: Vite 7
 - **样式**: TailwindCSS 4
@@ -67,18 +69,53 @@ npm start
 - **WebSocket**: Socket.IO Client
 
 ### 后端
+
 - **运行时**: Node.js + TypeScript
 - **框架**: Express
-- **WebSocket**: Socket.IO
+- **WebSocket**: Socket.IO + 原生 WebSocket (Polymarket CLOB)
+- **数据库**: SQLite (Paper Trading)
 - **缓存**: Redis (可选)
 - **日志**: Winston
-- **数据源**: 
-  - ESPN API (比赛赛程、实时比分、胜率预测、伤病信息)
-  - Polymarket API (市场价格数据)
+- **数据源**:
+  - **ESPN API** - 比赛赛程、实时比分、胜率预测、伤病信息、**博彩公司赔率 (PickCenter)**
+  - **Polymarket CLOB WebSocket** - 实时市场价格数据
+  - **Polymarket Gamma API** - 市场搜索和匹配
+
+## 📊 套利策略
+
+### 核心算法：保守共识
+
+```
+边际 = MIN(ESPN 胜率, 博彩公司均值胜率) - Polymarket 价格
+```
+
+| 数据源                   | 用途                         | 是否免费 |
+| ------------------------ | ---------------------------- | -------- |
+| **ESPN 胜率**            | 实时统计模型预测             | ✅ 免费  |
+| **ESPN PickCenter 赔率** | 博彩公司赔率 (DraftKings 等) | ✅ 免费  |
+| **Polymarket 价格**      | 预测市场买卖价               | ✅ 免费  |
+
+### 信号生成规则
+
+- **最小边际**: 5%（可配置）
+- **仅限 LIVE**: 只在比赛进行中触发信号
+- **价格使用**: BestAsk（实际买入价，非中间价）
+
+### 示例
+
+```
+ESPN 胜率:           65%
+博彩公司胜率:        60% (来自 DraftKings)
+Polymarket Ask 价格: $0.52
+
+保守胜率 = MIN(65%, 60%) = 60%
+边际 = 60% - 52% = 8% ≥ 5% → 买入信号 ✅
+```
 
 ## 📡 API 端点
 
 ### REST API
+
 - `GET /health` - 健康检查
 - `GET /api/matches` - 获取所有比赛
 - `GET /api/matches/:id` - 获取单场比赛
@@ -86,6 +123,7 @@ npm start
 - `GET /api/stats` - 获取统计信息
 
 ### WebSocket
+
 - **连接**: `ws://localhost:3000`
 - **事件**:
   - `subscribe` - 订阅比赛更新
@@ -93,42 +131,44 @@ npm start
   - `matchesUpdate` - 接收比赛更新
   - `signalAlert` - 接收套利信号
 
-详细 API 文档：[server/API.md](./server/API.md)
+📖 详细 API 文档：[server/API.zh-CN.md](./server/API.zh-CN.md)
 
 ## ✨ 核心功能
 
-- ⚡ **毫秒级实时更新** - WebSocket 推送，价格延迟 < 1秒
-- 🔄 **多源数据整合** - ESPN 赔率 + Polymarket 预测市场
-- 💰 **自动套利检测** - EV+ 模型，利润空间 > 10% 触发
-- 🔒 **无风险套利** - 自动识别双边价格倒挂（总价 < 1），锁定无风险收益
+- ⚡ **毫秒级实时更新** - Polymarket WebSocket 推送，价格延迟 < 1秒
+- 🔄 **多源数据整合** - ESPN + Polymarket + 博彩公司赔率
+- 💰 **保守套利检测** - 双源共识，5%+ 边际阈值
+- 🎰 **免费赔率数据** - ESPN PickCenter 博彩赔率（无需 API Key）
 - 🤖 **Paper Trading** - Q1-Q3 价值回归策略，混合离场机制
 - 💸 **真实价格模拟** - 买入用 Ask，卖出用 Bid，包含滑点
 - 🎯 **智能离场** - 获利了结(25%) + 逻辑证伪 + 硬止损(50%)
-- 📊 **数据可视化** - ESPN 风格胜率曲线，交互式悬停
+- 📊 **数据可视化** - ESPN 风格胜率曲线 + 博彩公司赔率显示
 - 🎯 **智能匹配** - 三层漏斗精准匹配球队和市场
 - ⏰ **时间控制** - 只做 Q1-Q3，避免第四节赌博逻辑
 
 ## 📊 数据更新策略
 
 ### 实时数据（不缓存）
-- ✅ **比分、时间、ESPN 胜率、Polymarket 价格**
+
+- ✅ **比分、时间、ESPN 胜率、Polymarket 价格、博彩赔率**
 - ESPN: 每 **1秒** 请求一次（节流）
 - Polymarket: **WebSocket 实时推送**（被动接收）
 - 前端: 每 **500ms** 推送一次
 
 ### 静态数据（长效缓存 24小时）
+
 - ✅ **今日比赛列表、Token ID、Market ID、Team Mapping**
 - 这些数据在比赛期间不会改变
 - 减少 API 请求，提升性能
 
 ### 价格体系
-| 价格类型 | 用途 | 来源 |
-|---------|------|------|
-| **Ask（卖价）** | 买入时支付 | `asks[0].price` |
-| **Bid（买价）** | 卖出时收到 | `bids[0].price` |
-| **Mid（中间价）** | 显示、估值 | `(Bid + Ask) / 2` |
 
-> 💡 详见 [价格使用指南](./docs/PRICE_GUIDE.md)
+| 价格类型          | 用途         | 来源              |
+| ----------------- | ------------ | ----------------- |
+| **Ask（卖价）**   | 买入时支付   | `asks[0].price`   |
+| **Bid（买价）**   | 卖出时收到   | `bids[0].price`   |
+| **Mid（中间价）** | 显示、估值   | `(Bid + Ask) / 2` |
+| **小数赔率**      | 博彩公司显示 | 从美式赔率转换    |
 
 ## 🔐 环境配置
 
@@ -143,7 +183,7 @@ NODE_ENV=development
 POLYMARKET_WS_ENABLED=true
 POLYMARKET_WS_URL=wss://ws-subscriptions-clob.polymarket.com/ws/market
 # 代理设置：海外服务器用 'none'，国内用 'http://127.0.0.1:7890'
-POLYMARKET_WS_PROXY=none
+POLYMARKET_WS_PROXY=http://127.0.0.1:7890
 
 # CORS
 CORS_ORIGIN=*
@@ -155,14 +195,16 @@ REDIS_ENABLED=false
 LOG_LEVEL=info
 ```
 
-> ⚠️ **重要**: 
+> ⚠️ **重要**:
+>
 > - Polymarket WebSocket 需要 HTTP 代理访问（国内网络）
+> - 使用 Clash 或类似代理，地址 `127.0.0.1:7890`
 > - 心跳机制使用 WebSocket 协议层 Ping/Pong（15秒间隔）
-> - 详细配置请参考 [server/docs/WEBSOCKET.md](./server/docs/WEBSOCKET.md)
 
 ## 📝 开发指南
 
 ### 前端开发
+
 ```bash
 cd client
 npm run dev      # 启动开发服务器
@@ -171,6 +213,7 @@ npm run lint     # 代码检查
 ```
 
 ### 后端开发
+
 ```bash
 cd server
 npm run dev      # 启动开发服务器
@@ -203,15 +246,17 @@ docker compose logs -f server
 ```
 
 #### Docker 常用命令
-| 命令 | 说明 |
-|------|------|
-| `docker compose up -d` | 启动所有服务 |
-| `docker compose down` | 停止所有服务 |
-| `docker compose restart server` | 重启后端 |
+
+| 命令                            | 说明         |
+| ------------------------------- | ------------ |
+| `docker compose up -d`          | 启动所有服务 |
+| `docker compose down`           | 停止所有服务 |
+| `docker compose restart server` | 重启后端     |
 | `docker compose logs -f server` | 查看后端日志 |
-| `docker compose ps` | 查看容器状态 |
+| `docker compose ps`             | 查看容器状态 |
 
 ### 使用 PM2（备选方案）
+
 ```bash
 cd server
 npm run start:pm2
@@ -221,37 +266,21 @@ npm run start:pm2
 
 1. **代理配置** 🌐
    - **海外服务器**：设置 `POLYMARKET_WS_PROXY=none`
-   - **国内网络**：设置 `POLYMARKET_WS_PROXY=http://127.0.0.1:7890`（或你的代理地址）
+   - **国内网络**：设置 `POLYMARKET_WS_PROXY=http://127.0.0.1:7890`（Clash 代理）
 
 2. **WebSocket 订阅限制** 📡
    - 单次订阅最多 10 个 tokens
    - 批次间隔 100ms
    - 避免 `INVALID OPERATION` 错误
 
-3. **队名特殊处理** 🏀
-   - Thunder 队名包含 "under"
-   - 需要特殊逻辑避免误排除
+3. **免费数据源** 💸
+   - ESPN PickCenter 免费提供博彩公司赔率（DraftKings 等）
+   - 无需 API Key 即可获取赔率数据
+   - 赔率自动提取并显示
 
 4. **数据延迟** ⏱️
    - Polymarket WebSocket: < 1秒
-   - ESPN 轮询: 2-30秒（动态调整）
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 📄 许可证
-
-ISC License
-
-## 📞 联系方式
-yhrsc30@gmail.com
-
-## 📚 文档索引
-
-- 📖 **[README](./README.md)** - 英文主文档
-- 📖 **[中文文档](./README.zh-CN.md)** - 中文主文档
-- 📡 **[API 接口文档](./server/API.zh-CN.md)** - REST API & WebSocket 接口说明
+   - ESPN 轮询: 1-5秒（节流）
 
 ## 💼 Paper Trading 模拟交易系统
 
@@ -265,6 +294,7 @@ yhrsc30@gmail.com
 ### 💾 数据库使用
 
 #### 数据库文件位置
+
 ```
 server/data/polysniper.db
 ```
@@ -287,18 +317,21 @@ npm run reset-db
 ### 📊 自动记录内容
 
 #### 1. Paper Trading 账户
+
 - 初始余额：$1000
 - 当前余额
 - 总交易数、胜率
 - 总盈亏、盈亏率
 
 #### 2. 交易订单
+
 - 买入/卖出记录
 - 进场/离场价格
 - 盈亏统计
 - **战场情况**：比分、节次、时间、ESPN 胜率
 
 #### 3. 市场快照（每 3 秒）
+
 - **仅保存 LIVE 和 FINAL 状态**（赛前数据不保存）
 - 比分、胜率、价格
 - 套利信号
@@ -325,10 +358,12 @@ npm run reset-db
 ### 📈 查看交易数据
 
 **实时查看（前端）**：
+
 - 访问 `http://localhost:5173`
 - 查看"Paper Trading"面板
 
 **历史查看（命令行）**：
+
 ```bash
 cd server
 npm run view-snapshots  # 查看市场快照
@@ -341,9 +376,8 @@ npm run init-db         # 查看账户状态
 // 自动运行，无需配置
 初始资金: $1000 USDC
 仓位管理: 每次 10% 资金
-交易逻辑: 
+交易逻辑:
   - 发现信号 → 自动买入（Ask 价格）
-  - 无风险套利 → 同时买入主客队（当 Ask 总和 < 1）
   - 实时盈亏 → 市值估值（Mid 价格）
   - 比赛结束 → 自动平仓（Bid 价格）
 
@@ -354,6 +388,7 @@ npm run init-db         # 查看账户状态
 ```
 
 **示例日志：**
+
 ```
 ✅ [Paper Trading] 买入 LA Clippers x11.63 @$0.8600 (Ask价，成本: $10.00)
    订单ID: ORD000001, 置信度: 95.0%, 余额: $990.00
@@ -364,3 +399,26 @@ npm run init-db         # 查看账户状态
    离场原因: 获利了结
 ```
 
+## 📚 文档索引
+
+### 核心文档
+
+- 📖 **[README](./README.md)** - 英文主文档
+- 📖 **[中文文档](./README.zh-CN.md)** - 中文主文档
+
+### API 文档
+
+- 📡 **[API Documentation](./server/API.md)** - REST API & WebSocket (英文)
+- 📡 **[API 接口文档](./server/API.zh-CN.md)** - REST API & WebSocket (中文)
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+## 📄 许可证
+
+ISC License
+
+## 📞 联系方式
+
+yhrsc30@gmail.com
